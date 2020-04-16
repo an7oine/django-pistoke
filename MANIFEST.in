@@ -1,0 +1,2 @@
+recursive-include pistoke/static *
+recursive-include pistoke/templates *
