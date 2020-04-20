@@ -14,5 +14,8 @@ setuptools.setup(
   packages=setuptools.find_packages(),
   include_package_data=True,
   zip_safe=False,
+  extras_require={
+    'runserver': ['uvicorn'],
+  },
   **asennustiedot(__file__),
 )
