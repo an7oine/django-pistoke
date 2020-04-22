@@ -2,6 +2,7 @@
 
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.handlers.asgi import ASGIRequest
+from django.middleware.csrf import CsrfViewMiddleware
 
 
 class WebsocketOhjain:
@@ -29,14 +30,36 @@ class WebsocketOhjain:
   # class WebsocketOhjain
 
 
-class IstuntoOhjain(SessionMiddleware):
-  '''
-  Puukotetaan Django-istunto-ohjain siten,
-  ettei (olemattoman) paluusanoman määreisiin kosketa.
-  '''
+class OhitaPaluusanoma:
+  ''' Saateluokka, joka ohittaa paluusanoman käsittelyn. '''
   def process_response(self, request, response):
     return response
-  # class IstuntoOhjain
+
+
+class CsrfOhjain(OhitaPaluusanoma, CsrfViewMiddleware):
+  def process_view(self, request, callback, callback_args, callback_kwargs):
+    '''
+    Lisätään Websocket-pyyntöön metodi `_tarkista_csrf` pyyntödatan
+    mukana luettavan CSRF-tunnisteen tarkistamiseen.
+
+    Ohitetaan tavanomainen CSRF-tarkistus POST-datasta (super).
+    '''
+    # pylint: disable=protected-access
+    from django.middleware.csrf import (
+      _compare_salted_tokens,
+      _sanitize_token,
+    )
+    def _tarkista_csrf(csrf_token):
+      return _compare_salted_tokens(
+        _sanitize_token(csrf_token), request.META.get('CSRF_COOKIE')
+      )
+    request._tarkista_csrf = _tarkista_csrf
+    # def process_view
+  # class CsrfOhjain
+
+
+class IstuntoOhjain(OhitaPaluusanoma, SessionMiddleware):
+  pass
 
 
 # Muunnostaulu Websocket-pyyntöihin sovellettavista
@@ -49,13 +72,13 @@ WEBSOCKET_MIDDLEWARE = {
   'django.middleware.gzip.GZipMiddleware': False,
   'django.middleware.security.SecurityMiddleware' : False,
   'django.middleware.common.CommonMiddleware': False,
-  'django.middleware.csrf.CsrfViewMiddleware': False,
   'django.contrib.messages.middleware.MessageMiddleware': False,
   'django.middleware.clickjacking.XFrameOptionsMiddleware': False,
   'django_hosts.middleware.HostsResponseMiddleware': False,
 
   # Suoritetaan.
   'django_hosts.middleware.HostsRequestMiddleware': True,
+  'django.middleware.csrf.CsrfViewMiddleware': 'pistoke.ohjain.CsrfOhjain',
   'django.contrib.sessions.middleware.SessionMiddleware': \
     'pistoke.ohjain.IstuntoOhjain',
   'django.contrib.auth.middleware.AuthenticationMiddleware': True,
