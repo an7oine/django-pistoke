@@ -3,16 +3,14 @@
 # pylint: disable=invalid-name
 
 import asyncio
-import concurrent
 import fcntl
 import json
 import os
-import pty
-import signal
 import struct
 import termios
 
 from pistoke.nakyma import WebsocketNakyma
+from pistoke.paate import Paateprosessi
 
 
 class XtermNakyma(WebsocketNakyma):
@@ -38,74 +36,43 @@ class XtermNakyma(WebsocketNakyma):
   }
 
   def prosessi(self):
+    ''' Päätteessä ajettava prosessi. '''
     raise NotImplementedError
+
+  @staticmethod
+  async def _vastaanotto(receive, fd):
+    '''
+    Asynkroninen lukutehtävä: lue dataa ja syötä prosessille.
+    '''
+    while True:
+      data = await receive()
+
+      if isinstance(data, bytes):
+        # Binäärisanoma: näppäinkoodi.
+        # Control-C katkaisee syötteen.
+        if data == b'\x03':
+          break
+        try:
+          os.write(fd, data)
+        except OSError:
+          break
+
+      elif isinstance(data, str):
+        # Tekstisanoma: JSON-muotoinen IOCTL-ohjauskomento.
+        data = json.loads(data, strict=False)
+        if 'cols' in data and 'rows' in data:
+          # Asetetaan ikkunan koko.
+          fcntl.ioctl(
+            fd,
+            termios.TIOCSWINSZ,
+            struct.pack("HHHH", data['rows'], data['cols'], 0, 0)
+          )
+      # while True
+    # async def _vastaanotto
 
   async def websocket(self, request, *args, **kwargs):
     # pylint: disable=unused-argument
-    loop = asyncio.get_running_loop()
-
-    def kaynnista():
-      '''
-      Erillinen, synkroninen funktio aliprosessin
-      käynnistämiseksi.
-
-      Tarvitaan, koska `fork()`-kutsu asynkronisesta kontekstista
-      aiheuttaa poikkeuksen.
-      '''
-      # Avaa erillinen prosessi.
-      (child_pid, fd) = pty.fork()
-      if child_pid == 0:
-        # pylint: disable=protected-access
-        self.prosessi()
-        os._exit(0)
-        # if child_pid == 0
-
-      # Aseta PTY-master-kahva `non-blocking`-tilaan.
-      fcntl.fcntl(
-        fd,
-        fcntl.F_SETFL,
-        fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK
-      )
-      # Aseta alustava ikkunan koko.
-      fcntl.ioctl(
-        fd, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 50, 0, 0)
-      )
-      return child_pid, fd
-      # def kaynnista
-
-    # Käynnistä aliprosessi synkronisesti.
-    child_pid, fd = await loop.run_in_executor(None, kaynnista)
-
-    async def vastaanotto():
-      '''
-      Asynkroninen lukutehtävä: lue dataa ja syötä prosessille.
-      '''
-      while True:
-        data = await request.receive()
-
-        if isinstance(data, bytes):
-          # Binäärisanoma: näppäinkoodi.
-          try:
-            os.write(fd, data)
-          except OSError:
-            break
-
-        elif isinstance(data, str):
-          # Tekstisanoma: JSON-muotoinen IOCTL-ohjauskomento.
-          data = json.loads(data, strict=False)
-          if 'cols' in data and 'rows' in data:
-            fcntl.ioctl(
-              fd,
-              termios.TIOCSWINSZ,
-              struct.pack("HHHH", data['rows'], data['cols'], 0, 0)
-            )
-        # while True
-      # async def vastaanotto
-    vastaanotto_tehtava = asyncio.ensure_future(vastaanotto())
-
-    # Luettelo, johon kerätään kaikki aloitetut lähetystehtävät.
-    lahetystehtavat = []
-    def lahetys():
+    def lahetys(prosessi):
       '''
       Callback-tyyppinen rutiini datan lukemiseksi PTY:ltä.
       Kerää kaikki saatavilla oleva data, lähetä kerralla.
@@ -113,51 +80,35 @@ class XtermNakyma(WebsocketNakyma):
       data = bytearray()
       while True:
         try:
-          data += os.read(fd, 4096)
+          data += os.read(prosessi.fd, 4096)
         except (IOError, BlockingIOError):
           break
-      if data:
-        lahetystehtavat.append(asyncio.ensure_future(
-          request.send(data.decode())
-        ))
+        if not data:
+          return
+      asyncio.ensure_future(request.send(data.decode()))
       # def lahetys
-    loop.add_reader(fd, lahetys)
 
-    def odota():
-      ''' Synkroninen rutiini aliprosessin odottelemiseen. '''
-      # Odota aliprosessin päättymistä, mikäli se on
-      # käynnissä.
-      try:
-        os.waitpid(child_pid, 0)
-      except OSError:
-        pass
-      # Katkaistaan luku ja kirjoitus PTY:ltä, suljetaan kahva.
-      loop.remove_reader(fd)
-      loop.remove_writer(fd)
-      os.close(fd)
-      # def odota
+    # Alusta pääteprosessi ja datan vastaanottotehtävä.
+    paate = await Paateprosessi(self.prosessi, lukija=lahetys)
+    tehtavat = {
+      paate,
+      asyncio.ensure_future(
+        self._vastaanotto(request.receive, paate.fd)
+      )
+    }
 
-    # Suorita aliprosessi.
+    # Odota siksi kunnes joko syöte katkaistaan
+    # tai pääteprosessi on valmis.
     try:
-      # Odota aliprosessin päättymistä synkronisesti erillisessä
-      # suoritussäikeessä.
-      await loop.run_in_executor(
-        concurrent.futures.ThreadPoolExecutor(), odota
+      _, tehtavat = await asyncio.wait(
+        tehtavat, return_when=asyncio.FIRST_COMPLETED
       )
+
+    # Peruuta kesken jääneet tehtävät ja odota ne loppuun.
     finally:
-      # Katkaise aliprosessin pääteyhteys,
-      # mikäli se on vielä käynnissä.
-      try:
-        os.kill(child_pid, signal.SIGHUP)
-      except OSError:
-        pass
-      # Odota IO-tehtävien päättymistä.
-      vastaanotto_tehtava.cancel()
-      await asyncio.gather(
-        vastaanotto_tehtava,
-        *lahetystehtavat,
-        return_exceptions=True
-      )
+      for kesken in tehtavat:
+        kesken.cancel()
+      await asyncio.gather(*tehtavat, return_exceptions=True)
     # async def websocket
 
   # class XtermNakyma
