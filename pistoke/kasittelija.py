@@ -128,6 +128,9 @@ class WebsocketKasittelija(ASGIHandler):
     if not asyncio.iscoroutine(nakyma):
       return await self.send_response(nakyma, send)
 
+    # Luodaan asynkroninen tehtävä näkymän suorituksesta.
+    nakyma_tehtava = asyncio.ensure_future(nakyma)
+
     # Luodaan jono saapuville syötteille.
     _syote = asyncio.Queue()
     async def syote():
@@ -147,6 +150,7 @@ class WebsocketKasittelija(ASGIHandler):
           raise ValueError
         # while True
       # async def syote
+    syote_tehtava = asyncio.ensure_future(syote())
 
     async def _send(data):
       '''
@@ -167,16 +171,21 @@ class WebsocketKasittelija(ASGIHandler):
     request.send = _send
     # pylint: enable=attribute-defined-outside-init
 
+    # Alusta tehtävät.
+    tehtavat = {syote_tehtava, nakyma_tehtava}
+
     # Odota siksi kunnes joko syöte katkaistaan
     # tai näkymärutiini on valmis.
-    _, pending = await asyncio.wait({
-      asyncio.ensure_future(syote()),
-      asyncio.ensure_future(nakyma),
-    }, return_when=asyncio.FIRST_COMPLETED)
+    try:
+      _, tehtavat = await asyncio.wait(
+        tehtavat, return_when=asyncio.FIRST_COMPLETED
+      )
 
-    # Peruuta ja odota kesken jäänyt tehtävä loppuun.
-    tuple(map(asyncio.Task.cancel, pending))
-    await asyncio.gather(*pending, return_exceptions=True)
+    # Peruuta kesken jääneet tehtävät ja odota ne loppuun.
+    finally:
+      for kesken in tehtavat:
+        kesken.cancel()
+      await asyncio.gather(*tehtavat, return_exceptions=True)
     # async def __call__
 
   def load_middleware(self):
