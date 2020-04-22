@@ -245,14 +245,10 @@ class WebsocketKasittelija(ASGIHandler):
     # are some non-RFC compliant clients that require e.g. Content-Type.
     response_headers = []
     for header, value in response.items():
-      if isinstance(header, str):
-        header = header.encode('ascii')
-      if isinstance(value, str):
-        value = value.encode('latin1')
-      response_headers.append((bytes(header), bytes(value)))
+      response_headers.append((header, value))
     for c in response.cookies.values():
       response_headers.append(
-        (b'Set-Cookie', c.output(header='').encode('ascii').strip())
+        ('Set-Cookie', c.output(header='').strip())
       )
     # Initial response message.
     await send({
