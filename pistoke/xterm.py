@@ -9,24 +9,26 @@ import os
 import struct
 import termios
 
+from django.http import HttpResponse
+from django.views import generic
+
 from pistoke.nakyma import WebsocketNakyma
 from pistoke.paate import Paateprosessi
 
 
-class XtermNakyma(WebsocketNakyma):
+class XtermNakyma(WebsocketNakyma, generic.TemplateView):
   '''
   Django-näkymä vuorovaikutteisen Websocket-yhteyden tarjoamiseen.
 
   Käyttöliittymän luontiin käytetään Xterm.JS-vimpainta.
   '''
+  template_name = 'pistoke/xterm.html'
 
   class js_bool(int):
     ''' Näytetään totuusarvot javascript-muodossa: true/false. '''
     def __repr__(self):
       return repr(bool(self)).lower()
     # class js_bool
-
-  template_name = 'pistoke/xterm.html'
 
   # Xterm-ikkunan alustusparametrit.
   xterm = {
@@ -38,6 +40,15 @@ class XtermNakyma(WebsocketNakyma):
   def prosessi(self):
     ''' Päätteessä ajettava prosessi. '''
     raise NotImplementedError
+
+  def get(self, request, *args, **kwargs):
+    '''
+    Varmista, että Websocket-protokolla on saatavilla.
+    '''
+    if getattr(request, 'websocket', None) is None:
+      return HttpResponse(status=503)
+    return super().get(request, *args, **kwargs)
+    # def get
 
   @staticmethod
   async def _vastaanotto(receive, fd):
