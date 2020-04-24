@@ -73,7 +73,7 @@ class Paateprosessi(asyncio.Future):
     ''' Asenna signaalinkäsittelijä. '''
     # Asenna globaali signaalinkäsittelijä ensimmäisen prosessin
     # luonnin yhteydessä.
-    loop = asyncio.get_running_loop()
+    loop = asyncio.get_event_loop()
     loop.call_soon_threadsafe(cls._asenna_signaalinkasittelija)
 
     # Luo uusi prosessi asynkronisesti.
@@ -119,8 +119,8 @@ class Paateprosessi(asyncio.Future):
     @self.add_done_callback
     def done_callback(_):
       # Katkaistaan luku ja kirjoitus PTY:ltä, suljetaan kahva.
-      self.get_loop().remove_reader(self.fd)
-      self.get_loop().remove_writer(self.fd)
+      self._loop.remove_reader(self.fd)
+      self._loop.remove_writer(self.fd)
       os.close(self.fd)
       # def done_callback
 
