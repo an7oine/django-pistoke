@@ -51,6 +51,18 @@ class XtermNakyma(WebsocketNakyma, generic.TemplateView):
     # def get
 
   @staticmethod
+  async def _lahetys(send, jono):
+    '''
+    Asynkroninen lähetys: odota dataa jonosta ja lähetä.
+    '''
+    while True:
+      data = await jono.get()
+      await send(data.decode())
+      jono.task_done()
+      # while True
+    # async def _lahetys
+
+  @staticmethod
   async def _vastaanotto(receive, fd):
     '''
     Asynkroninen lukutehtävä: lue dataa ja syötä prosessille.
@@ -83,10 +95,11 @@ class XtermNakyma(WebsocketNakyma, generic.TemplateView):
 
   async def websocket(self, request, *args, **kwargs):
     # pylint: disable=unused-argument
-    def lahetys(prosessi):
+    lahetettava_data = asyncio.Queue()
+    def tulosteen_vastaanotto(prosessi):
       '''
       Callback-tyyppinen rutiini datan lukemiseksi PTY:ltä.
-      Kerää kaikki saatavilla oleva data, lähetä kerralla.
+      Kerää kaikki saatavilla oleva data, lisää lähetysjonoon.
       '''
       data = bytearray()
       while True:
@@ -96,16 +109,21 @@ class XtermNakyma(WebsocketNakyma, generic.TemplateView):
           break
         if not data:
           return
-      asyncio.ensure_future(request.send(data.decode()))
-      # def lahetys
+      lahetettava_data.put_nowait(data)
+      # def tulosteen_vastaanotto
+
+    # Aloita tulostedatan lähetys itsenäisenä tehtävänä.
+    lahetys_tehtava = asyncio.ensure_future(
+      self._lahetys(request.send, lahetettava_data)
+    )
 
     # Alusta pääteprosessi ja datan vastaanottotehtävä.
-    paate = await Paateprosessi(self.prosessi, lukija=lahetys)
+    paate = await Paateprosessi(self.prosessi, lukija=tulosteen_vastaanotto)
     tehtavat = {
       paate,
       asyncio.ensure_future(
         self._vastaanotto(request.receive, paate.fd)
-      )
+      ),
     }
 
     # Odota siksi kunnes joko syöte katkaistaan
@@ -120,6 +138,12 @@ class XtermNakyma(WebsocketNakyma, generic.TemplateView):
       for kesken in tehtavat:
         kesken.cancel()
       await asyncio.gather(*tehtavat, return_exceptions=True)
+      # Odota siksi, kunnes kaikki data on lähetetty.
+      await lahetettava_data.join()
+      # Peruuta lähetystehtävä ja odota se loppuun.
+      lahetys_tehtava.cancel()
+      await asyncio.gather(lahetys_tehtava, return_exceptions=True)
+
     # async def websocket
 
   # class XtermNakyma
