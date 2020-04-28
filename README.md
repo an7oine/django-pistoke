@@ -89,7 +89,7 @@ class Nakyma(WebsocketNakyma, generic.TemplateView):
 
 Xterm-näkymä
 ------------
-Pakettiin sisältyy valmis toteutus vuorovaikutteisen pääteistunnon tarjoamiseen Web-sivun kautta käyttäjälle. Pääte on toteutettu `Xterm.js`-vimpaimen avulla. Vimpain ohjaa Websocket-yhteyden läpi palvelimella olevaa TTY-tiedostokuvaajaa, joka puolestaan ohjaa PTY-päätettä, johon voidaan liittää haluttu, vuorovaikutteinen istunto (esim. `bash`).
+Pakettiin sisältyy valmis toteutus vuorovaikutteisen pääteistunnon tarjoamiseen Web-sivun kautta käyttäjälle. Pääte on toteutettu `Xterm.js`-vimpaimen avulla. Vimpain ohjaa Websocket-yhteyden läpi palvelimella olevaa PTY-tiedostokuvaajaa, joka puolestaan ohjaa TTY-päätettä, johon voidaan liittää haluttu, vuorovaikutteinen istunto (esim. `bash`).
 
 Seuraava esimerkki `bash`-pääteyhteyden käyttöönotosta lähettää tavanomaisen Django-CSRF-tunnisteen Websocket-pyynnön mukana (JSON-muodossa) ja tarkistaa sen ennen istunnon avaamista.
 ```python
