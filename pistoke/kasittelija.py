@@ -108,7 +108,9 @@ class WebsocketKasittelija(ASGIHandler):
     assert scope['type'] == 'websocket'
 
     set_script_prefix(self.get_script_prefix(scope))
-    signals.request_started.send(sender=self.__class__, scope=scope)
+    await sync_to_async(signals.request_started.send)(
+      sender=self.__class__, scope=scope
+    )
 
     # Suorita Websocket-kättely.
     while (await receive())['type'] != 'websocket.connect':
@@ -119,13 +121,11 @@ class WebsocketKasittelija(ASGIHandler):
     request = WebsocketPyynto(scope)
 
     # Hae käsittelevä näkymärutiini tai mahdollinen virheviesti.
-    if asyncio.iscoroutinefunction(self.get_response):
-      nakyma = await self.get_response(request)
-    else:
-      nakyma = await sync_to_async(self.get_response)(request)
+    nakyma = await self.get_response_async(request)
 
     # Palauta virhesanoma, mikäli `dispatch` tuotti sellaisen.
     if not asyncio.iscoroutine(nakyma):
+      nakyma._handler_class = self.__class__
       return await self.send_response(nakyma, send)
 
     # Luodaan asynkroninen tehtävä näkymän suorituksesta.
@@ -210,6 +210,13 @@ class WebsocketKasittelija(ASGIHandler):
     set_urlconf(settings.ROOT_URLCONF)
     return self._middleware_chain(request)
     # def get_response
+
+  async def get_response_async(self, request):
+    # XXX Django 3.1: otetaan käyttöön super()-toteutus.
+    return await asyncio.get_event_loop().run_in_executor(
+      None, self.get_response, request
+    )
+    # async def get_response_async
 
   def _get_response(self, request):
     '''
