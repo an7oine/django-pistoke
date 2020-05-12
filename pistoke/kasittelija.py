@@ -108,7 +108,10 @@ class WebsocketKasittelija(ASGIHandler):
     assert scope['type'] == 'websocket'
 
     set_script_prefix(self.get_script_prefix(scope))
-    await sync_to_async(signals.request_started.send)(
+    await sync_to_async(
+      signals.request_started.send,
+      thread_sensitive=True
+    )(
       sender=self.__class__, scope=scope
     )
 
@@ -186,6 +189,17 @@ class WebsocketKasittelija(ASGIHandler):
       for kesken in tehtavat:
         kesken.cancel()
       await asyncio.gather(*tehtavat, return_exceptions=True)
+      # Lähetä sanoma päättyneestä pyynnöstä.
+      # Huomaa, että normaalisti tämä tehdään paluusanoman
+      # `close`-metodissa;
+      # ks. `django.http.response.HttpResponseBase.close`.
+      await sync_to_async(
+        signals.request_finished.send,
+        thread_sensitive=True
+      )(
+        sender=self.__class__
+      )
+      # finally
     # async def __call__
 
   def load_middleware(self):
