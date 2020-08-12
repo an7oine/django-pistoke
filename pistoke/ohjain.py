@@ -46,11 +46,11 @@ class CsrfOhjain(OhitaPaluusanoma, CsrfViewMiddleware):
     '''
     # pylint: disable=protected-access
     from django.middleware.csrf import (
-      _compare_salted_tokens,
+      _compare_masked_tokens,
       _sanitize_token,
     )
     def _tarkista_csrf(csrf_token):
-      return _compare_salted_tokens(
+      return _compare_masked_tokens(
         _sanitize_token(csrf_token), request.META.get('CSRF_COOKIE')
       )
     request._tarkista_csrf = _tarkista_csrf
