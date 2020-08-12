@@ -85,6 +85,10 @@ class WebsocketPyynto(ASGIRequest):
   # class WebsocketPyynto
 
 
+class WebsocketVirhe(RuntimeError):
+  ''' Virheellinen konteksti Websocket-pyynnön käsittelyssä (WSGI). '''
+
+
 class WebsocketKasittelija(ASGIHandler):
   '''
   Saapuvien Websocket-pyyntöjen (istuntojen) käsittelyrutiini.
@@ -202,9 +206,10 @@ class WebsocketKasittelija(ASGIHandler):
       # finally
     # async def __call__
 
-  def load_middleware(self):
+  def load_middleware(self, is_async=False):
     '''
-    Ajetaan vain muunnostaulun mukaan sallitut ohjaimet.
+    Ajetaan vain muunnostaulun mukaiset Websocket-pyynnölle käyttöön
+    otettavat ohjaimet.
     '''
     with override_settings(MIDDLEWARE=list(filter(None, (
       ws_ohjain if isinstance(ws_ohjain, str)
@@ -214,45 +219,28 @@ class WebsocketKasittelija(ASGIHandler):
         for ohjain in settings.MIDDLEWARE
       )
     )))):
-      super().load_middleware()
+      super().load_middleware(is_async=is_async)
     # def load_middleware
 
+  # Synkroniset pyynnöt nostavat poikkeuksen.
   def get_response(self, request):
-    '''
-    Ohitetaan paluusanoman käsittelyyn liittyvät funktiokutsut.
-    '''
-    set_urlconf(settings.ROOT_URLCONF)
-    return self._middleware_chain(request)
-    # def get_response
+    raise WebsocketVirhe
+  def _get_response(self, request):
+    raise WebsocketVirhe
 
   async def get_response_async(self, request):
-    # XXX Django 3.1: otetaan käyttöön super()-toteutus.
-    return await asyncio.get_event_loop().run_in_executor(
-      None, self.get_response, request
-    )
+    ''' Ohitetaan paluusanoman käsittelyyn liittyvät funktiokutsut. '''
+    set_urlconf(settings.ROOT_URLCONF)
+    return await self._middleware_chain(request)
     # async def get_response_async
 
-  def _get_response(self, request):
-    '''
-    Ohitetaan paluusanoman käsittelyyn liittyvät funktiokutsut.
-    '''
-    if hasattr(request, 'urlconf'):
-      urlconf = request.urlconf
-      set_urlconf(urlconf)
-      resolver = get_resolver(urlconf)
-    else:
-      resolver = get_resolver()
-
-    resolver_match = resolver.resolve(request.path_info)
-    callback, callback_args, callback_kwargs = resolver_match
-    request.resolver_match = resolver_match
-
+  async def _get_response_async(self, request):
+    ''' Ohitetaan paluusanoman käsittelyyn liittyvät funktiokutsut. '''
+    callback, callback_args, callback_kwargs = self.resolve_request(request)
     for middleware_method in self._view_middleware:
-      middleware_method(request, callback, callback_args, callback_kwargs)
-
-    # pylint: disable=not-callable
+      await middleware_method(request, callback, callback_args, callback_kwargs)
     return callback(request, *callback_args, **callback_kwargs)
-    # def _get_response
+    # async def _get_response_async
 
   async def send_response(self, response, send):
     '''
