@@ -88,10 +88,20 @@ uvicorn_application_static = Kasittelija(
 
 class Command(_Command):
   def add_arguments(self, parser):
-    super(Command, self).add_arguments(parser)
+    # pylint: disable=protected-access
+    super().add_arguments(parser)
     if uvicorn is not None:
       # Mikäli uvicorn on asennettu, käytetään oletuksena
       # ASGI-palvelinta ja lisätään vipu WSGI:n käyttöön.
+      # Lisätään myös uvicorn-lokitustasot mahdollisina
+      # komentoriviparametreinä '-v'-vivulle.
+      for a in parser._actions:
+        if a.dest == 'verbosity':
+          a.type = lambda s: int(s) if s in ['0', '1', '2', '3'] else s
+          a.choices += [
+            'critical', 'error', 'warning', 'info', 'debug', 'trace'
+          ]
+          break
       parser.add_argument(
         '--wsgi',
         action='store_false',
@@ -113,9 +123,19 @@ class Command(_Command):
       host=addr,
       port=port,
       log_level={
-        0: 'critical', 1: 'error', 2: 'info', 3: 'debug'
-      }.get(options['verbosity'], 1),
+        0: 'critical',
+        #: 'error',
+        #: 'warning',
+        1: 'info',
+        2: 'debug',
+        3: 'trace',
+      }.get(options['verbosity'], options['verbosity'] or 'info'),
       reload=options['use_reloader'],
+      **(
+        {'use_colors': True} if options['force_color']
+        else {'use_colors': False} if options['no_color']
+        else {}
+      ),
     )
     # def run
 
