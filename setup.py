@@ -11,6 +11,7 @@ setuptools.setup(
   url='https://github.com/an7oine/django-pistoke.git',
   author='Antti Hautaniemi',
   author_email='antti.hautaniemi@pispalanit.fi',
+  licence='MIT',
   packages=setuptools.find_packages(),
   include_package_data=True,
   zip_safe=False,
