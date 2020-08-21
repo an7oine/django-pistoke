@@ -11,7 +11,7 @@ from django.core.handlers.asgi import ASGIHandler, ASGIRequest
 from django.core import signals
 from django.http import QueryDict
 from django.test.utils import override_settings
-from django.urls import get_resolver, set_script_prefix, set_urlconf
+from django.urls import set_script_prefix, set_urlconf
 
 from pistoke.ohjain import WEBSOCKET_MIDDLEWARE
 
@@ -154,7 +154,7 @@ class WebsocketKasittelija(ASGIHandler):
         elif sanoma['type'] == 'websocket.disconnect':
           break
         else:
-          raise ValueError
+          raise ValueError(sanoma['type'])
         # while True
       # async def syote
     syote_tehtava = asyncio.ensure_future(syote())
@@ -169,6 +169,8 @@ class WebsocketKasittelija(ASGIHandler):
         return await send({'type': 'websocket.send', 'bytes': bytes(data)})
       elif isinstance(data, bytes):
         return await send({'type': 'websocket.send', 'bytes': data})
+      else:
+        raise TypeError(str(type(data)))
       # async def _send
 
     # pylint: disable=attribute-defined-outside-init
@@ -236,10 +238,17 @@ class WebsocketKasittelija(ASGIHandler):
 
   async def _get_response_async(self, request):
     ''' Ohitetaan paluusanoman käsittelyyn liittyvät funktiokutsut. '''
+    # pylint: disable=not-callable
     callback, callback_args, callback_kwargs = self.resolve_request(request)
     for middleware_method in self._view_middleware:
       await middleware_method(request, callback, callback_args, callback_kwargs)
-    return callback(request, *callback_args, **callback_kwargs)
+    # Kutsutaan `dispatch`-metodia synkronisesti, sillä se saattaa
+    # aiheuttaa kantakyselyjä.
+    # Huomaa, että paluusanomana saadaan `websocket`-metodin
+    # palauttama alirutiini, joka palautetaan sellaisenaan.
+    return await sync_to_async(callback, thread_sensitive=True)(
+      request, *callback_args, **callback_kwargs
+    )
     # async def _get_response_async
 
   async def send_response(self, response, send):
