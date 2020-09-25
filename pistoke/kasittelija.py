@@ -282,18 +282,20 @@ class WebsocketKasittelija(ASGIHandler):
       # it has been overridden in a subclass.
       for part in response:
         for chunk, _ in self.chunk_bytes(part):
-          await send({
-            'type': 'websocket.send',
-            'bytes': chunk,
-          })
+          if chunk:
+            await send({
+              'type': 'websocket.send',
+              'bytes': chunk,
+            })
     # Other responses just need chunking.
     else:
       # Yield chunks of response.
       for chunk, _ in self.chunk_bytes(response.content):
-        await send({
-          'type': 'websocket.send',
-          'bytes': chunk,
-        })
+        if chunk:
+          await send({
+            'type': 'websocket.send',
+            'bytes': chunk,
+          })
     response.close()
     # async def send_response
 
