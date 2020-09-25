@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.core.asgi import get_asgi_application
 from django.core.handlers.asgi import ASGIHandler
+from django.core.management import CommandError
 
 try:
   import uvicorn
@@ -90,33 +91,41 @@ class Command(_Command):
   def add_arguments(self, parser):
     # pylint: disable=protected-access
     super().add_arguments(parser)
-    if uvicorn is not None:
-      # Mikäli uvicorn on asennettu, käytetään oletuksena
-      # ASGI-palvelinta ja lisätään vipu WSGI:n käyttöön.
-      # Lisätään myös uvicorn-lokitustasot mahdollisina
-      # komentoriviparametreinä '-v'-vivulle.
-      for a in parser._actions:
-        if a.dest == 'verbosity':
-          a.type = lambda s: int(s) if s in ['0', '1', '2', '3'] else s
-          a.choices += [
-            'critical', 'error', 'warning', 'info', 'debug', 'trace'
-          ]
-          break
-      parser.add_argument(
-        '--wsgi',
-        action='store_false',
-        dest='asgi',
-        default=True,
-        help='Käynnistä WSGI-palvelin (oletus ASGI).'
-      )
+    # Mikäli uvicorn on asennettu, käytetään oletuksena
+    # ASGI-palvelinta ja lisätään vipu WSGI:n käyttöön.
+    # Lisätään myös uvicorn-lokitustasot mahdollisina
+    # komentoriviparametreinä '-v'-vivulle.
+    for a in parser._actions:
+      if a.dest == 'verbosity':
+        a.type = lambda s: int(s) if s in ['0', '1', '2', '3'] else s
+        a.choices += [
+          'critical', 'error', 'warning', 'info', 'debug', 'trace'
+        ]
+        break
+    # Lisätään parametrit `--wsgi` ja `--asgi` palvelimen tyypin
+    # valitsemiseksi.
+    oletus_asgi = bool(uvicorn is not None)
+    parser.add_argument(
+      '--asgi',
+      action='store_true',
+      dest='asgi',
+      default=oletus_asgi,
+      help=f'Käynnistä ASGI-palvelin (oletus{"" if oletus_asgi else " WSGI"}).'
+    )
+    parser.add_argument(
+      '--wsgi',
+      action='store_false',
+      dest='asgi',
+      default=oletus_asgi,
+      help=f'Käynnistä WSGI-palvelin (oletus{" ASGI" if oletus_asgi else ""}).'
+    )
     # def add_arguments
 
   def asgi_run(self, addr, port, asgi_handler, **options):
     if uvicorn is None:
-      raise RuntimeError(
-        'Uvicorn-paketti puuttuu.'
-        ' ASGI-testipalvelimen ajaminen edellyttää tätä.'
-        'Asenna komennolla `pip install uvicorn`.'
+      raise CommandError(
+        'ASGI-palvelimen ajaminen edellyttää `uvicorn`-paketin käyttöä.'
+        ' Asenna se komennolla `pip install uvicorn`.'
       )
     uvicorn.run(
       asgi_handler,
