@@ -6,10 +6,9 @@ Django-Websocket-laajennos
 
 Järjestelmävaatimukset
 ----------------------
-Python 3.6 tai uudempi
-Django 3.0 tai uudempi
-
-ASGI-palvelinohjelmisto: Daphne, Uvicorn tms.
+* Python 3.6 tai uudempi
+* Django 3.0 tai uudempi
+* ASGI-palvelinohjelmisto (tuotannossa): Daphne, Uvicorn tms.
 
 
 Käyttöönotto
@@ -87,6 +86,31 @@ class Nakyma(WebsocketNakyma, generic.TemplateView):
 ```
 
 
+ASGI-kehityspalvelin työasemalla
+--------------------------------
+
+Paketti muokkaa Djangon tavanomaista `runserver`-komentoa (tai `staticfiles`-sovelluksen muokkaamaa versiota siitä) seuraavasti:
+- vipu `--wsgi` käynnistää tavanomaisen (sisäänrakennetun) WSGI-palvelimen;
+- vipu `--asgi` käynnistää ASGI-palvelimen (`uvicorn`-pakettia käyttäen);
+- oletus on ASGI, jos ja vain jos `uvicorn` on asennettu;
+- `--asgi`-vipu aiheuttaa poikkeuksen, mikäli `uvicornia` ei löydy; ja
+- `--verbose`-vipu hyväksyy ASGI-tilassa tavanomaisten numeroarvojen lisäksi
+  myös `uvicorn --log-level`-vivun hyväksymät tekstimääreet.
+
+ASGI-toteututuksena voidaan käyttää myös vaikkapa Daphnea seuraavasti:
+```bash
+daphne projekti.asgi:application
+```
+
+
+ASGI-palvelin testi- tai tuotantokäytössä
+-----------------------------------------
+Ks. vaikkapa https://www.uvicorn.org/deployment/#running-behind-nginx
+
+
+Esimerkkejä
+===========
+
 Xterm-näkymä
 ------------
 Pakettiin sisältyy valmis toteutus vuorovaikutteisen pääteistunnon tarjoamiseen Web-sivun kautta käyttäjälle. Pääte on toteutettu `Xterm.js`-vimpaimen avulla. Vimpain ohjaa Websocket-yhteyden läpi palvelimella olevaa PTY-tiedostokuvaajaa, joka puolestaan ohjaa TTY-päätettä, johon voidaan liittää haluttu, vuorovaikutteinen istunto (esim. `bash`).
@@ -144,20 +168,8 @@ class Komentokeskusnakyma(XtermNakyma):
 {% endblock skriptit %}
 ```
 
+Websocket-pohjainen datataulu
+-----------------------------
+Websocket-yhteyden kautta voidaan tarjota reaaliaikainen syöte jQuery-datataulun sisältönä. Tällöin vältytään yhdeltä Ajax-pyynnöltä kutakin muutosta kohti taulun suodatusehdoissa, järjestystekijöissä tai sivutuksessa. Lisäksi voidaan päivittää datataulun sisältö reaaliaikaisesti palvelimen lähettämien ajantasasanomien mukaan.
 
-ASGI-palvelimen ajaminen työasemalla
-------------------------------------
-
-Paketti muokkaa Djangon tavanomaista `runserver`-komentoa (tai `staticfiles`-sovelluksen muokkaamaa versiota siitä) seuraavasti:
-- mikäli `uvicorn` on asennettu, käynnistetään oletuksena ASGI-palvelin sen avulla;
-- vipu `--wsgi` käynnistää tällöin sen sijaan tavanomaisen WSGI-palvelimen.
-
-ASGI-toteututuksena voidaan käyttää myös vaikkapa Daphnea seuraavasti:
-```bash
-daphne projekti.asgi:application
-```
-
-
-ASGI-palvelin testi- tai tuotantokäytössä
------------------------------------------
-Ks. vaikkapa https://www.uvicorn.org/deployment/#running-behind-nginx
+Ks. https://github.com/an7oine/datatables-websocket
