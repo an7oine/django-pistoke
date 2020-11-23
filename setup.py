@@ -14,7 +14,8 @@ setup(
   include_package_data=True,
   zip_safe=False,
   install_requires=[
-    'websockets'
+    'django>=3.1',
+    'websockets>=8.0',
   ],
   extras_require={
     'runserver': ['uvicorn[standard]'],
