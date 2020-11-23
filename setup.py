@@ -1,22 +1,22 @@
 # -*- coding: utf-8 -*-
 
-import setuptools
+from setuptools import setup, find_packages
 
-setuptools._install_setup_requires({'setup_requires': ['git-versiointi']})
-from versiointi import asennustiedot
-
-setuptools.setup(
+setup(
+  setup_requires='git-versiointi',
   name='django-pistoke',
   description='Django-Websocket-laajennos',
   url='https://github.com/an7oine/django-pistoke.git',
   author='Antti Hautaniemi',
   author_email='antti.hautaniemi@pispalanit.fi',
   licence='MIT',
-  packages=setuptools.find_packages(),
+  packages=find_packages(),
   include_package_data=True,
   zip_safe=False,
+  install_requires=[
+    'websockets'
+  ],
   extras_require={
-    'runserver': ['uvicorn[watchgodreload]'],
+    'runserver': ['uvicorn[standard]'],
   },
-  **asennustiedot(__file__),
 )
