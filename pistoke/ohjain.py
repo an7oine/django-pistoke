@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 
+import asyncio
+
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.handlers.asgi import ASGIRequest
 from django.middleware.csrf import CsrfViewMiddleware
+from django.utils.decorators import sync_and_async_middleware
 
 
+@sync_and_async_middleware
 class WebsocketOhjain:
   '''
   Ohjain, joka asettaa pyynnölle URI-määritteen `websocket` siten,
@@ -18,8 +22,15 @@ class WebsocketOhjain:
   '''
   def __init__(self, get_response):
     self.get_response = get_response
+    # Asetetaan tämä ohjain näyttämään ulospäin asynkroniselta silloin,
+    # kun signaalitien seuraava ohjain on sellainen.
+    if asyncio.iscoroutinefunction(self.get_response):
+      self._is_coroutine = asyncio.coroutines._is_coroutine
 
   def __call__(self, request):
+    # Huomaa, että funktiokutsu palauttaa joko synkronisen tuloksen
+    # tai asynkronisen alirutiinin sen mukaan, mitä signaalitien
+    # seuraava ohjain palauttaa.
     if isinstance(request, ASGIRequest):
       request.websocket = (
         f'{"wss" if request.is_secure() else "ws"}://{request.get_host()}'
