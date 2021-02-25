@@ -20,4 +20,7 @@ setup(
   extras_require={
     'runserver': ['uvicorn[standard]'],
   },
+  entry_points={'django.asetukset': [
+    'pistoke = pistoke.asetukset',
+  ]},
 )
