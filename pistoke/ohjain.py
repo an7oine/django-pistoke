@@ -92,7 +92,6 @@ WEBSOCKET_MIDDLEWARE = {
   'django.middleware.gzip.GZipMiddleware': False,
   'django.middleware.security.SecurityMiddleware' : False,
   'django.middleware.common.CommonMiddleware': False,
-  'django.contrib.messages.middleware.MessageMiddleware': False,
   'django.middleware.clickjacking.XFrameOptionsMiddleware': False,
   'django_hosts.middleware.HostsResponseMiddleware': False,
 
@@ -102,6 +101,7 @@ WEBSOCKET_MIDDLEWARE = {
   'django.contrib.sessions.middleware.SessionMiddleware': \
     'pistoke.ohjain.IstuntoOhjain',
   'django.contrib.auth.middleware.AuthenticationMiddleware': True,
+  'django.contrib.messages.middleware.MessageMiddleware': True,
   'impersonate.middleware.ImpersonateMiddleware': True,
   'silk.middleware.SilkyMiddleware': True,
   'pistoke.ohjain.WebsocketOhjain': True,
