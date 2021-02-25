@@ -60,10 +60,19 @@ class CsrfOhjain(OhitaPaluusanoma, CsrfViewMiddleware):
       _compare_masked_tokens,
       _sanitize_token,
     )
-    def _tarkista_csrf(csrf_token):
+    def tarkista_csrf(csrf_token):
       return _compare_masked_tokens(
         _sanitize_token(csrf_token), request.META.get('CSRF_COOKIE')
       )
+    def _tarkista_csrf(csrf_token):
+      import warnings
+      warnings.warn(
+        'Metodi `request._tarkista_csrf` on nimetty uudelleen:'
+        ' `request.tarkista_csrf`.',
+        DeprecationWarning
+      )
+      return tarkista_csrf(csrf_token)
+    request.tarkista_csrf = tarkista_csrf
     request._tarkista_csrf = _tarkista_csrf
     # def process_view
   # class CsrfOhjain
