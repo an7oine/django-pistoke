@@ -55,6 +55,7 @@ def csrf_tarkistus(*args, **kwargs):
           virhe_avain: virhe
         } if virhe_avain else virhe)
 
+      self._websocket_kattely = kattely
       return await _websocket.__wrapped__(self, request, *args, **kwargs)
       # async def _websocket
 
