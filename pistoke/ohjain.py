@@ -61,7 +61,9 @@ class CsrfOhjain(OhitaPaluusanoma, CsrfViewMiddleware):
       _sanitize_token,
     )
     def tarkista_csrf(csrf_token):
-      return _compare_masked_tokens(
+      return csrf_token \
+      and request.META.get('CSRF_COOKIE') \
+      and _compare_masked_tokens(
         _sanitize_token(csrf_token), request.META.get('CSRF_COOKIE')
       )
     def _tarkista_csrf(csrf_token):
