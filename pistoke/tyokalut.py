@@ -4,27 +4,36 @@ import functools
 import json
 
 
-def json_viestiliikenne(websocket):
+def json_viestiliikenne(*args, **kwargs):
   ''' Lähetä ja vastaanota JSON-muodossa. '''
+  def _json_viestiliikenne(websocket, *, loads=None, dumps=None):
+    @functools.wraps(websocket)
+    async def _websocket(self, request, *args, **kwargs):
 
-  @functools.wraps(websocket)
-  async def _websocket(self, request, *args, **kwargs):
+      @functools.wraps(request.receive)
+      async def receive():
+        return json.loads(
+          await receive.__wrapped__(), **loads or {}
+        )
+      request.receive = receive
 
-    @functools.wraps(request.receive)
-    async def receive():
-      return json.loads(await receive.__wrapped__())
-    request.receive = receive
+      @functools.wraps(request.send)
+      async def send(viesti):
+        return await send.__wrapped__(json.dumps(
+          viesti, **dumps or {}
+        ))
+      request.send = send
 
-    @functools.wraps(request.send)
-    async def send(viesti):
-      return await send.__wrapped__(json.dumps(viesti))
-    request.send = send
+      return await _websocket.__wrapped__(self, request, *args, **kwargs)
+      # async def websocket
 
-    return await _websocket.__wrapped__(self, request, *args, **kwargs)
-    # async def websocket
-
-  return _websocket
-  # def websocket_json_viestiliikenne
+    return _websocket
+    # def _json_viestiliikenne
+  if args:
+    return _json_viestiliikenne(*args, **kwargs)
+  else:
+    return functools.partial(_json_viestiliikenne, **kwargs)
+  # def json_viestiliikenne
 
 
 def csrf_tarkistus(*args, **kwargs):
