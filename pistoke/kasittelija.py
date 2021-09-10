@@ -186,25 +186,52 @@ class WebsocketKasittelija(ASGIHandler):
     # Odota siksi kunnes joko syöte katkaistaan
     # tai näkymärutiini on valmis.
     try:
-      _, tehtavat = await asyncio.wait(
+      valmiit, tehtavat = await asyncio.wait(
         tehtavat, return_when=asyncio.FIRST_COMPLETED
       )
 
-    # Peruuta kesken jääneet tehtävät ja odota ne loppuun.
     finally:
+      # Peruuta kesken jääneet tehtävät.
       for kesken in tehtavat:
         kesken.cancel()
-      await asyncio.gather(*tehtavat, return_exceptions=True)
-      # Lähetä sanoma päättyneestä pyynnöstä.
-      # Huomaa, että normaalisti tämä tehdään paluusanoman
-      # `close`-metodissa;
-      # ks. `django.http.response.HttpResponseBase.close`.
-      await sync_to_async(
-        signals.request_finished.send,
-        thread_sensitive=True
-      )(
-        sender=self.__class__
+
+      # Odota molemmat tehtävät loppuun ja poimi niiden tulokset.
+      tulokset = await asyncio.gather(
+        *valmiit,
+        *tehtavat,
+        return_exceptions=True
       )
+
+      # Palauta mahdolliset poikkeukset paluusanomana, mikäli käytössä
+      # on ohjaimia, jotka määrittelevät `process_exception`-metodin.
+      # Muutoin nostetaan poikkeus sellaisenaan tässä.
+      # Vrt. `django.core.handlers.base:BaseHandler._get_response_async`.
+      try:
+        for exc in tulokset:
+          if isinstance(exc, asyncio.CancelledError):
+            pass
+          elif isinstance(exc, BaseException):
+            vastaus = await sync_to_async(
+              self.process_exception_by_middleware,
+              thread_sensitive=True,
+            )(exc, request)
+            if vastaus is not None:
+              await self.send_response(vastaus, request.send)
+            else:
+              raise exc
+
+      finally:
+        # Lähetä signaali päättyneestä pyynnöstä.
+        # Huomaa, että normaalisti tämä tehdään paluusanoman
+        # `close`-metodissa;
+        # ks. `django.http.response.HttpResponseBase.close`.
+        await sync_to_async(
+          signals.request_finished.send,
+          thread_sensitive=True
+        )(
+          sender=self.__class__
+        )
+        # finally
       # finally
     # async def __call__
 
