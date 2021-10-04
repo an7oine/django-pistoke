@@ -171,7 +171,7 @@ class Command(_Command):
       # Poimitaan haluttu sovellus käsillä olevasta moduulista.
       handler = self.__class__.__module__ + (
         ':uvicorn_application_static'
-        if options['use_static_handler'] and (
+        if options.get('use_static_handler', False) and (
           settings.DEBUG or options['insecure_serving']
         )
         else ':uvicorn_application'
