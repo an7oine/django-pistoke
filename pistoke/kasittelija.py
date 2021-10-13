@@ -111,6 +111,7 @@ class WebsocketKasittelija(ASGIHandler):
     '''
     assert scope['type'] == 'websocket'
 
+    # Tehdään Django-rutiinitoimet per saapuva pyyntö.
     set_script_prefix(self.get_script_prefix(scope))
     await sync_to_async(
       signals.request_started.send,
@@ -119,24 +120,8 @@ class WebsocketKasittelija(ASGIHandler):
       sender=self.__class__, scope=scope
     )
 
-    # Suorita Websocket-kättely.
-    while (await receive())['type'] != 'websocket.connect':
-      pass
-    await send({'type': 'websocket.accept'})
-
-    # Muodosta pyyntö.
+    # Muodostetaan WS-pyyntöolio.
     request = WebsocketPyynto(scope)
-
-    # Hae käsittelevä näkymärutiini tai mahdollinen virheviesti.
-    nakyma = await self.get_response_async(request)
-
-    # Palauta virhesanoma, mikäli `dispatch` tuotti sellaisen.
-    if not asyncio.iscoroutine(nakyma):
-      nakyma._handler_class = self.__class__
-      return await self.send_response(nakyma, send)
-
-    # Luodaan asynkroninen tehtävä näkymän suorituksesta.
-    nakyma_tehtava = asyncio.ensure_future(nakyma)
 
     # Luodaan jono saapuville syötteille.
     _syote = asyncio.Queue()
@@ -157,7 +142,6 @@ class WebsocketKasittelija(ASGIHandler):
           raise ValueError(sanoma['type'])
         # while True
       # async def syote
-    syote_tehtava = asyncio.ensure_future(syote())
 
     async def _send(data):
       '''
@@ -174,14 +158,69 @@ class WebsocketKasittelija(ASGIHandler):
       # async def _send
 
     # pylint: disable=attribute-defined-outside-init
-    # Kääri ASGI-protokollan mukaiset `receive`- ja `send`-metodit
-    # Websocket-metodeiksi.
-    request.receive = _syote.get
-    request.send = _send
-    # pylint: enable=attribute-defined-outside-init
+    # Odotetaan hyväksyvää Websocket-kättelyä
+    # (ks. `_get_response_async` alempana).
+    # Mikäli yhteyspyyntöä ei hyväksytty, katkaistaan käsittely.
+    async def kattely_receive():
+      return await receive()
+    async def kattely_send(data):
+      await send(data)
+      if data['type'] != 'websocket.accept':
+        raise asyncio.CancelledError
+      # Kääri ASGI-protokollan mukaiset `receive`- ja `send`-metodit
+      # Websocket-metodeiksi.
+      # Nämä asetetaan kättelyn jälkeen.
+      request.receive = _syote.get
+      request.send = _send
+      # async def _send
 
-    # Alusta tehtävät.
-    tehtavat = {syote_tehtava, nakyma_tehtava}
+    # Asetetaan pyyntökohtaiset `receive`- ja `send`-toteutukset kättelyn ajaksi.
+    request.receive = kattely_receive
+    request.send = kattely_send
+
+    # Hae käsittelevä näkymärutiini tai mahdollinen virheviesti.
+    # Tämä kutsuu mahdollisten avaavien välikkeiden (middleware) ketjua
+    # ja lopuksi alla määriteltyä `_get_response_async`-metodia.
+    # Metodi suorittaa ensin Websocket-kättelyn loppuun ja sen jälkeen
+    # URL-taulun mukaisen näkymäfunktion (async def websocket(...): ...).
+    try:
+      nakyma = await self.get_response_async(request)
+    except asyncio.CancelledError:
+      # Yhteyspyyntöä ei hyväksytty.
+      await sync_to_async(
+        signals.request_finished.send,
+        thread_sensitive=True
+      )(
+        sender=self.__class__
+      )
+      return
+      # except asyncio.CancelledError
+
+    # Palauta virhesanoma, mikäli `dispatch` tuotti alirutiinin
+    # sijaan sellaisen.
+    if not asyncio.iscoroutine(nakyma):
+      nakyma._handler_class = self.__class__
+      # Lähetetään HTTP-virhesanoma soveltuvin osin vastauksena
+      # Websocket-pyynnölle.
+      # Huomaa, että WS-kättely (connect + accept) oletetaan suoritetuksi
+      # ennen virhesanoman muodostumista.
+      await self.send_response(nakyma, send)
+      # Suljetaan yhteys ja tehdään Django-ylläpitotoimet per pyyntö.
+      await send({'type': 'websocket.close'})
+      await sync_to_async(
+        signals.request_finished.send,
+        thread_sensitive=True
+      )(
+        sender=self.__class__
+      )
+      return
+      # if not asyncio.iscoroutine
+
+    # Alustetaan taustalla ajettavat tehtävät.
+    tehtavat = {
+      asyncio.ensure_future(syote()),
+      asyncio.ensure_future(nakyma),
+    }
 
     # Odota siksi kunnes joko syöte katkaistaan
     # tai näkymärutiini on valmis.
@@ -225,6 +264,7 @@ class WebsocketKasittelija(ASGIHandler):
         # Huomaa, että normaalisti tämä tehdään paluusanoman
         # `close`-metodissa;
         # ks. `django.http.response.HttpResponseBase.close`.
+        await send({'type': 'websocket.close'})
         await sync_to_async(
           signals.request_finished.send,
           thread_sensitive=True
@@ -269,6 +309,13 @@ class WebsocketKasittelija(ASGIHandler):
     callback, callback_args, callback_kwargs = self.resolve_request(request)
     for middleware_method in self._view_middleware:
       await middleware_method(request, callback, callback_args, callback_kwargs)
+
+    # Odotetaan avaavaa Websocket-kättelyä.
+    assert (await request.receive())['type'] == 'websocket.connect'
+
+    # Hyväksytään websocket-yhteyspyyntö.
+    await request.send({'type': 'websocket.accept'})
+
     # Kutsutaan `dispatch`-metodia synkronisesti, sillä se saattaa
     # aiheuttaa kantakyselyjä.
     # Huomaa, että paluusanomana saadaan `websocket`-metodin
