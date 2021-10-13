@@ -313,8 +313,33 @@ class WebsocketKasittelija(ASGIHandler):
     # Odotetaan avaavaa Websocket-kättelyä.
     assert (await request.receive())['type'] == 'websocket.connect'
 
-    # Hyväksytään websocket-yhteyspyyntö.
-    await request.send({'type': 'websocket.accept'})
+    # Valitaan käytettävä WS-yhteysprotokolla, mikäli
+    # näkymä määrittelee käytössä olevat protokollat.
+    kaytettavissa_protokolla = getattr(
+      callback, '_websocket_protokolla', []
+    )
+    pyydetty_protokolla = request.scope.get('subprotocols', [])
+    if kaytettavissa_protokolla or pyydetty_protokolla:
+      # pylint: disable=protected-access, no-member
+      if isinstance(kaytettavissa_protokolla, str):
+        kaytettavissa_protokolla = [kaytettavissa_protokolla]
+      for hyvaksytty_protokolla in pyydetty_protokolla:
+        if hyvaksytty_protokolla in kaytettavissa_protokolla:
+          break
+      else:
+        # Yhtään yhteensopivaa protokollaa ei löytynyt (tai pyynnöllä
+        # ei ollut annettu yhtään protokollaa).
+        # Hylätään yhteyspyyntö.
+        return await request.send({'type': 'websocket.close'})
+      # Hyväksytään WS-yhteyspyyntö valittua protokollaa käyttäen.
+      await request.send({
+        # pylint: disable=undefined-loop-variable
+        'type': 'websocket.accept',
+        'subprotocol': hyvaksytty_protokolla,
+      })
+    else:
+      # Näkymä ei määrittele protokollaa; hyväksytään pyyntö.
+      await request.send({'type': 'websocket.accept'})
 
     # Kutsutaan `dispatch`-metodia synkronisesti, sillä se saattaa
     # aiheuttaa kantakyselyjä.
