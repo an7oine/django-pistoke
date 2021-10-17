@@ -8,3 +8,4 @@ else:
   INSTALLED_APPS.append('pistoke.Pistoke')
 
 MIDDLEWARE.append('pistoke.ohjain.WebsocketOhjain')
+MIDDLEWARE.append('pistoke.ohjain.OriginVaatimus')

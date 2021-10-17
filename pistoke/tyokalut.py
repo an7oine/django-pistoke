@@ -75,3 +75,13 @@ def csrf_tarkistus(*args, **kwargs):
   else:
     return functools.partial(_csrf_tarkistus, **kwargs)
   # def csrf_tarkistus
+
+
+def origin_poikkeus(nakyma):
+  ''' Ohita Origin-otsakkeen tarkistus Websocket-pyynnön yhteydessä. '''
+  @functools.wraps(nakyma)
+  def _nakyma(*args, **kwargs):
+    return nakyma(*args, **kwargs)
+  _nakyma.origin_poikkeus = True
+  return _nakyma
+  # def origin_poikkeus
