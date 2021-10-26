@@ -10,7 +10,7 @@ setup(
   author='Antti Hautaniemi',
   author_email='antti.hautaniemi@me.com',
   licence='MIT',
-  packages=find_packages(),
+  packages=find_packages(exclude=['testit']),
   include_package_data=True,
   python_requires='>=3.6',
   install_requires=[
