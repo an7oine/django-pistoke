@@ -3,24 +3,25 @@
 from setuptools import setup, find_packages
 
 setup(
-  setup_requires='git-versiointi>=1.6b4',
+  setup_requires='git-versiointi',
   name='django-pistoke',
   description='Django-Websocket-laajennos',
   url='https://github.com/an7oine/django-pistoke.git',
   author='Antti Hautaniemi',
-  author_email='antti.hautaniemi@pispalanit.fi',
+  author_email='antti.hautaniemi@me.com',
   licence='MIT',
   packages=find_packages(),
   include_package_data=True,
-  zip_safe=False,
+  python_requires='>=3.6',
   install_requires=[
     'django>=3.1',
-    'websockets>=8.0',
   ],
   extras_require={
     'runserver': ['uvicorn[standard]'],
+    'websocket': ['websockets>=8.0'],
   },
   entry_points={'django.asetukset': [
     'pistoke = pistoke.asetukset',
   ]},
+  zip_safe=False,
 )

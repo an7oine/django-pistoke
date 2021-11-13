@@ -1,19 +1,69 @@
-django-pistoke
-==============
+# django-pistoke
 
-Django-Websocket-laajennos
+Django-laajennos, joka mahdollistaa Websocket-pyyntöjen käsittelemisen Django-näkymien kautta tasavertaisesti HTTP-pyyntöjen rinnalla.
+
+Sisältää seuraavat työkalut:
+
+* [Websocket-käsittelijä](#asgi-määritys) testi- ja tuotantokäyttöön
+
+* [HTTP- ja Websocket-ohjaimet](#ohjaimet) (middleware)
+
+* [asynkroninen kehityspalvelin: `manage.py runserver --asgi`](#asgi-kehityspalvelin)
+
+* [Websocket-näkymäprotokolla](#websocket-protokolla)
+
+* [Websocket-näkymäluokka](#websocket-näkymä)
+
+* [tarvittavat testaustyökalut](#websocket-näkymien-testaaminen)
 
 
-Järjestelmävaatimukset
-----------------------
+## Käyttöönotto
+
+### Järjestelmävaatimukset
+
 * Python 3.6 tai uudempi
-* Django 3.0 tai uudempi
-* ASGI-palvelinohjelmisto (tuotannossa): Daphne, Uvicorn tms.
+* Django 3.1 tai uudempi
+* ASGI-palvelinohjelmisto (tuotannossa): Daphne, Uvicorn, Hypercorn tms.
 
 
-Käyttöönotto
-------------
-Luo tai muokkaa Django-projektin ASGI-määritystiedosto seuraavan esimerkin mukaisesti:
+### Asennus
+
+```bash
+pip install django-pistoke
+```
+
+### Django-projektiasetukset
+
+Lisää Django-projektiasetuksiin:
+- `pistoke.Pistoke` asennettuihin sovelluksiin (ennen mahdollista `staticfiles`-sovellusta) ja 
+- `pistoke.ohjain.WebsocketOhjain` asennettuihin ohjaimiin:
+```python
+# projekti/asetukset.py
+...
+INSTALLED_APPS = [
+  ...
+  'pistoke.Pistoke',
+  ...
+  'django.contrib.staticfiles', # tarvittaessa
+  ...
+]
+MIDDLEWARE = [
+  ...
+  'pistoke.ohjain.WebsocketOhjain',
+]
+```
+
+Tämä järjestys vaaditaan, jotta käsillä olevan paketin toteuttama `runserver`-komento ohittaa `staticfiles`-toteutuksen.
+
+Jakeluun sisältyvä [`django-protoni`](https://pypi.org/project/django-protoni/)-yhteensopiva asetuslaajennos (pistoke/asetukset.py) tekee nämä lisäykset automaattisesti.
+
+
+### ASGI-määritys
+
+Luo tai täydennä Django-projektin ASGI-määritystiedosto. Alla kuvattu esimerkkimääritys:
+- alustaa Django-oletuskäsittelijän HTTP-pyynnöille,
+- alustaa Pistoke-käsittelijän Websocket-pyynnöille ja
+- ajaa kunkin saapuvan ASGI-pyynnön oikean käsittelijän läpi, jolloin pyyntö ohjautuu tavanomaisen Django-reititystaulun (`ROOT_URLCONF`) mukaiselle näkymälle riippumatta sen tyypistä.
 
 ```python
 # projekti/asgi.py
@@ -34,29 +84,80 @@ async def application(scope, receive, send):
 ```
 
 
-Ohjaimet (middleware)
----------------------
-Tavanomaiset Django-ohjaimet ajetaan Websocket-pyynnölle soveltuvin osin samalla tavoin kuin HTTP-pyynnölle.
+## Ohjaimet
 
-CSRF-ohjainta muokataan siten, että saapuvan Websocket-pyynnön CSRF-tunnistetta ei yritetä tarkistaa ohjaimessa (sitä ei ole saatavilla ilman POST-dataa). Sen sijaan pyynnölle lisätään metodi `_tarkista_csrf` Websocket-yhteyden kautta vastaanotetun CSRF-datan tarkistamiseksi ajonaikaisesti.
+### Ohjaimet HTTP-pyynnöllä
 
-Pistoke-sovellus lisää oman ohjaimensa (`pistoke.ohjain.WebsocketOhjain`), joka asettaa saapuvalle HTTP-pyynnölle määritteen `websocket`, joka sisältää URI-osoitteen Websocket-pyyntöjen ohjaamiseksi samalle palvelimelle kuin kyseinen HTTP-pyyntö. Mikäli alkuperäinen HTTP-pyyntö on salattu (`https://`), käytetään myös tässä URI-osoitteessa salattua Websocket-protokollaa (`wss://`).
+Käsillä oleva paketti sisältää tavanomaisen Django/HTTP-ohjaimen `pistoke.ohjain.WebsocketOhjain`, joka asettaa saapuvalle HTTP-pyynnölle määritteen `websocket`.
+- tämä sisältää URI-osoitteen, esim. `ws://palvelin.org`, Websocket-pyyntöjen ohjaamiseksi samalle palvelimelle (`http://palvelin.org`) kuin kyseinen HTTP-pyyntö;
+- mikäli HTTP-yhteys on salattu (esim. `https://palvelin.org`), käytetään salattua Websocket-protokollaa: `wss://palvelin.org`.
+
+### Ohjaimet Websocket-pyynnöllä
+
+Tavanomaiset Django-ohjaimet ajetaan Websocket-pyynnölle samalla tavoin kuin HTTP-pyynnölle, pl. HTTP-paluusanoman käsittely.
+
+CSRF-ohjainta muokataan siten, että saapuvan Websocket-pyynnön CSRF-tunnistetta ei yritetä tarkistaa ohjaimessa (sitä ei ole saatavilla ilman POST-dataa). Sen sijaan pyynnölle lisätään metodi `tarkista_csrf` Websocket-yhteyden kautta vastaanotetun CSRF-datan tarkistamiseksi ajonaikaisesti.
+
+Lisäksi Websocket-pyynnöille käytetään ohjainta, joka tarkistaa web-selaimen asettaman `Origin`-otsakkeen arvon. Ohjain hyväksyy oletusarvoisesti vain `ALLOWED_HOSTS`-asetuksen mukaiset pyyntölähteet; muista lähteistä tuleville pyynnöille palautuu hylkäävä paluusanoma (403).
 
 
-Websocket-näkymä
-----------------
-Saapuvat HTTP- ja Websocket-pyynnöt ohjataan Django-näkymille tavanomaisen `urlpatterns`-reititystaulun mukaisesti. Websocket-pyynnön metodiksi (`request.method`) asetetaan `Websocket`, jolloin `django.views.generic.View.dispatch` ohjaa sen käsiteltäväksi näkymäluokan `websocket`-metodiin. Tämän metodin tulee olla asynkroninen: tyyppiä `async def`.
+## Websocket-protokolla
 
-Huomaa, että `websocket`-metodi pitää erikseen sallia näkymäluokalle, jotta tämän tyyppiset pyynnöt sallitaan. Saateluokka `pistoke.nakyma:WebsocketNakyma` tekee tämän automaattisesti.
+Kullekin Websocket-pyyntöjä käsittelevälle näkymälle on määriteltävä protokolla, jonka mukaan yhteys luodaan ja katkaistaan ja viestinvälitys tapahtuu.
 
-Websocket-toiminnallisuus voidaan ottaa käyttöön näkymäkohtaisesti esimerkiksi seuraavasti:
+Näkymä voi joko
+- itse toteuttaa ASGI-määrityksen mukaisen viestinvaihdon (`{"type": "websocket.connect"}`, `{"type": "websocket.send", "text": "..."}` jne.),
+- käyttää käsillä olevan paketin tarjoamaa protokollatoteutusta: `pistoke.protokolla.WebsocketProtokolla` ja sen alaluokat; tai
+- käyttää oletusarvoista protokolla joka otetaan automaattisesti käyttöön.
+
+Protokollaa käytetään sellaisenaan koristeena Websocket-näkymäfunktiolle tai Django-`method_decoratorin` avulla koristeena näkymäluokan `websocket`-metodille.
+
+Huomaa, että samaan näkymään liittyvien koristeiden keskinäisellä määritysjärjestyksellä on merkitystä. Kun Websocket-näkymässä käytetään protokollan `P` lisäksi esimerkiksi Django-pääsynhallintaan liittyvää koristetta `D`:
+- Mikäli protokolla `P` on sisempänä (alempana) kuin `D`, palautuu käyttäjälle tavanomainen HTTP-virhesanoma 401 tai 403, kun oikeudet eivät riitä.
+- Mikäli protokolla `P` on ulompana (ylempänä) kuin `D`, avautuu Websocket-yhteys normaalisti myös silloin, kun oikeudet eivät riitä. Yhteys kuitenkin päättyy tällöin heti poikkeukseen.
+
+Huomaa, että käsillä olevan paketin toteuttama automaattinen protokollamääritys muodostaa aina uloimman kerroksen näkymän ympärillä.
+
+Yleiskäyttöisen kantaluokan (`WebsocketProtokolla`) lisäksi käytettävissä ovat seuraavat, rajatumpiin tilanteisiin soveltuvat protokollat:
+- `WebsocketAliProtokolla("protokolla-a", "protokolla-b")`: Websocket-aliprotokollamääritys
+- `WebsocketJSONProtokolla`: JSON-muotoinen viestinvaihto.
+
+
+### Yhteensopivuus: django-pistoke v0.x vs. v1.x
+
+Yhteensopivuuden varmistamiseksi taaksepäin käytetään versioon 1.1 asti seuraavaa automatiikkaa:
+- mikäli Websocket-näkymälle on asetettu jokin edellä mainittu protokolla, sitä käytetään sellaisenaan
+- muussa tapaksessa näkymä koristellaan automaattisesti `WebsocketProtokolla`-tyyppiseksi.
+
+Versioon 1.2 asti on lisäksi käytettävissä seuraava ohitus edellämainittuun automatiikkaan:
+- mikäli näkymäluokka toteuttaa itse ASGI-viestinvaihdon, tämä voidaan määrittää `TyhjaWebsocketProtokolla`-koristetta käyttäen.
+
+
+## Websocket-näkymä
+
+[Websocket-käsittelijä](#asgi-määritys) ohjaa saapuvat pyynnöt Django-näkymille tavanomaisen `urlpatterns`-reititystaulun mukaisesti. Websocket-pyynnön metodiksi (`request.method`) asetetaan `Websocket`. Näkymän toteutus voi olla funktio- tai luokkapohjainen:
+- `django.views.generic.View.dispatch` ohjaa WS-pyynnön käsiteltäväksi näkymäluokan `websocket`-metodiin;
+- funktiopohjainen näkymä voi vastata pyynnön metodin perusteella eri tavoin HTTP- ja Websocket-pyyntöihin.
+
+Kummassakin tapauksessa WS-pyynnön käsittelystä vastaavan metodin tai funktion tulee olla tyyppiä `async def`.
+
+Huomaa, että luokkapohjaisen näkymän tapauksessa `Websocket`-metodi pitää erikseen sallia näkymäluokalle (HTTP-metodien kuten `GET` ja `POST` ohella), jotta tämän tyyppiset pyynnöt sallitaan. Saateluokka `pistoke.nakyma:WebsocketNakyma` tekee tämän automaattisesti.
+
+Seuraava listaus on esimerkki yhdysrakenteisesta, luokkapohjaisesta näkymätoteutuksesta, joka
+- palauttaa GET-pyynnöllä Django-sivuaihion ja
+- vastaa Websocket-pyyntöön jatkuvana viestivaihtona:
+
 ```python
-# sovellus/nakymat.py
+# sovellus/nakyma.py
 
+from django.urls import path
+from django.utils.decorators import method_decorator
 from django.views import generic
 
 from pistoke.nakyma import WebsocketNakyma
+from pistoke.protokolla import WebsocketProtokolla
 
+@method_decorator(WebsocketProtokolla(), name='websocket')
 class Nakyma(WebsocketNakyma, generic.TemplateView):
   template_name = 'sovellus/nakyma.html'
 
@@ -71,12 +172,24 @@ class Nakyma(WebsocketNakyma, generic.TemplateView):
         await request.send(
           f'Kirjoitit "{syote.decode("latin-1")}".'.encode('latin-1')
         )
+     # white True
+   # async def websocket
+ # class Nakyma
+
+urlpatterns = [path('nakyma/', Nakyma.as_view())]
 ```
 
+Esimerkki tähän näkymään liittyvästä HTML-aihiosta:
 ```html
 <!-- sovellus/templates/sovellus/nakyma.html -->
-<input id="syote" type="text" placeholder="Syötä viesti"/>
-<button onClick="websocket.send(document.getElementById("syote").value);">Lähetä</button>
+<input
+  id="syote"
+  type="text"
+  placeholder="Syötä viesti"
+  />
+<button
+  onclick="websocket.send(document.getElementById('syote').value);"
+  >Lähetä</button>
 <script>
   websocket = new WebSocket(
     "{{ request.websocket }}{{ request.path }}"
@@ -86,90 +199,37 @@ class Nakyma(WebsocketNakyma, generic.TemplateView):
 ```
 
 
-ASGI-kehityspalvelin työasemalla
---------------------------------
+## ASGI-kehityspalvelin
 
-Paketti muokkaa Djangon tavanomaista `runserver`-komentoa (tai `staticfiles`-sovelluksen muokkaamaa versiota siitä) seuraavasti:
+Paketti sisältää `runserver`-ylläpitokomentototeutuksen (Django-kehityspalvelin), joka periytetään joko:
+- Djangon tavanomaisesta `runserver`-komennosta tai
+- `django.contrib.staticfiles`-sovelluksen periyttämästä komennosta, mikäli tämä on asennettu.
+
+Käsillä olevan paketin toteuttama `runserver` lisää seuraavat vivut edellä mainittuihin toteutuksiin nähden:
 - vipu `--wsgi` käynnistää tavanomaisen (sisäänrakennetun) WSGI-palvelimen;
 - vipu `--asgi` käynnistää ASGI-palvelimen (`uvicorn`-pakettia käyttäen);
-- oletus on ASGI, jos ja vain jos `uvicorn` on asennettu;
-- `--asgi`-vipu aiheuttaa poikkeuksen, mikäli `uvicornia` ei löydy; ja
-- `--verbose`-vipu hyväksyy ASGI-tilassa tavanomaisten numeroarvojen lisäksi
-  myös `uvicorn --log-level`-vivun hyväksymät tekstimääreet.
+- oletus näistä on ASGI, jos ja vain jos `uvicorn` on asennettu.
 
-ASGI-toteututuksena voidaan käyttää myös vaikkapa Daphnea seuraavasti:
-```bash
-daphne projekti.asgi:application
-```
+Huomaa, että `--asgi`-vipu edellyttää [Uvicorn](https://pypi.org/project/uvicorn/)-paketin asentamisen ja aiheuttaa poikkeuksen, mikäli tätä ei löydy.
 
-
-ASGI-palvelin testi- tai tuotantokäytössä
------------------------------------------
-Ks. vaikkapa https://www.uvicorn.org/deployment/#running-behind-nginx
+Vakiona `runserver`-komennon hyväksymä `--verbose`-vipu hyväksyy, silloin kuin käytössä on `--asgi`-tila, tavanomaisten numeroarvojensa (0–3) lisäksi myös `uvicorn --log-level`-vivun hyväksymät tekstimuotoiset määreet:
+- `critical`: vastaa Django-tasoa 0
+- `error`
+- `warning`
+- `info`: vastaa Django-tasoa 1
+- `debug`: vastaa Django-tasoa 2
+- `trace`: vastaa Django-tasoa 3
 
 
-Esimerkkejä
-===========
+## Palvelinasennus
 
-Xterm-näkymä
-------------
-Pakettiin sisältyy valmis toteutus vuorovaikutteisen pääteistunnon tarjoamiseen Web-sivun kautta käyttäjälle. Pääte on toteutettu `Xterm.js`-vimpaimen avulla. Vimpain ohjaa Websocket-yhteyden läpi palvelimella olevaa PTY-tiedostokuvaajaa, joka puolestaan ohjaa TTY-päätettä, johon voidaan liittää haluttu, vuorovaikutteinen istunto (esim. `bash`).
+Palvelinasennukseen sopii hyvin vaikkapa yhdistelmä Nginx + Circus + Uvicorn; ks. <https://www.uvicorn.org/deployment/#running-behind-nginx>.
 
-Seuraava esimerkki `bash`-pääteyhteyden käyttöönotosta lähettää tavanomaisen Django-CSRF-tunnisteen Websocket-pyynnön mukana (JSON-muodossa) ja tarkistaa sen ennen istunnon avaamista.
-```python
-# sovellus/bash.py
 
-import json
-import subprocess
+## Käyttöesimerkkejä
 
-from pistoke.xterm import XtermNakyma
-
-class Komentokeskusnakyma(XtermNakyma):
-  template_name = 'sovellus/bash.html'
-
-  def prosessi(self):
-    subprocess.run(['/bin/bash'])
-
-  async def websocket(self, request, *args, **kwargs):
-    data = json.loads(await request.receive())
-    if not request._tarkista_csrf(data.get('csrfmiddlewaretoken')):
-      return await request.send(
-        '\033[31mCSRF-avain puuttuu tai se on virheellinen!\033[0m'
-      )
-    await super().websocket(request, *args, **kwargs)
-```
-
-```html
-<!-- sovellus/bash.html -->
-{% extends "pistoke/xterm.html" %}
-
-{% block sisalto %}
-  <form id="avaa" method="POST">
-    {% csrf_token %}
-    <input type="submit" value="Suorita"/>
-  </form>
-  <hr/>
-  {{ block.super }}
-{% endblock sisalto %}
-
-{% block skriptit %}
-  {{ block.super }}
-  <script>
-    document.getElementById("avaa").onsubmit = function (e) {
-      e.preventDefault();
-      var formData = new FormData(e.target);
-      var lomake = {};
-      formData.forEach(function (value, key) {
-        lomake[key] = value;
-      });
-      avaa_xterm(function (ws) { ws.send(JSON.stringify(lomake)); });
-    };
-  </script>
-{% endblock skriptit %}
-```
-
-Websocket-pohjainen datataulu
------------------------------
-Websocket-yhteyden kautta voidaan tarjota reaaliaikainen syöte jQuery-datataulun sisältönä. Tällöin vältytään yhdeltä Ajax-pyynnöltä kutakin muutosta kohti taulun suodatusehdoissa, järjestystekijöissä tai sivutuksessa. Lisäksi voidaan päivittää datataulun sisältö reaaliaikaisesti palvelimen lähettämien ajantasasanomien mukaan.
-
-Ks. https://github.com/an7oine/datatables-websocket
+* Reaaliaikainen keskusteluyhteys kahden käyttäjän välillä: [django-juttulaatikko](https://pypi.org/project/django-juttulaatikko/)
+* Datan reaaliaikainen, kaksisuuntainen synkronointi Django-palvelimen ja selaimen välillä Websocket-yhteyden välityksellä: [django-synkroni](https://pypi.org/project/django-synkroni/)
+* Xterm-pääteyhteys Django-sovelluksena: [django-xterm](https://pypi.org/project/django-xterm/)
+* Django-ilmoitusten (`messages`) reaaliaikainen toimitus selaimelle Celery-pinon ja Websocket-yhteyden avulla: [django-celery-ilmoitus](https://pypi.org/project/django-celery-ilmoitus/)
+* jQuery-Datatables-liitännäinen Websocket-pohjaiseen tiedonsiirtoon erillisten Ajax-pyyntöjen asemesta: [datatables-websocket](https://github.com/an7oine/datatables-websocket.git)
