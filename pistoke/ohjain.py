@@ -56,15 +56,21 @@ class CsrfOhjain(OhitaPaluusanoma, CsrfViewMiddleware):
     Ohitetaan tavanomainen CSRF-tarkistus POST-datasta (super).
     '''
     # pylint: disable=protected-access
-    from django.middleware.csrf import (
-      _compare_masked_tokens,
-      _sanitize_token,
-    )
+    try:
+      # Django >= 4.0
+      from django.middleware.csrf import _does_token_match
+    except ImportError:
+      # Django < 4.0
+      from django.middleware.csrf import (
+        _compare_masked_tokens as _does_token_match
+      )
+    from django.middleware.csrf import _sanitize_token
     def tarkista_csrf(csrf_token):
       return csrf_token \
       and request.META.get('CSRF_COOKIE') \
-      and _compare_masked_tokens(
-        _sanitize_token(csrf_token), request.META.get('CSRF_COOKIE')
+      and _does_token_match(
+        _sanitize_token(csrf_token),
+        request.META.get('CSRF_COOKIE'),
       )
     def _tarkista_csrf(csrf_token):
       import warnings
