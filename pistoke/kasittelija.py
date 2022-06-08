@@ -260,11 +260,12 @@ class WebsocketKasittelija(ASGIHandler):
               raise exc
 
       finally:
+        # WS-yhteyden sulkeva viesti lähetetään ulompaa käsittelypinossa.
+        #await send({'type': 'websocket.close'})
         # Lähetä signaali päättyneestä pyynnöstä.
         # Huomaa, että normaalisti tämä tehdään paluusanoman
         # `close`-metodissa;
         # ks. `django.http.response.HttpResponseBase.close`.
-        await send({'type': 'websocket.close'})
         await sync_to_async(
           signals.request_finished.send,
           thread_sensitive=True
