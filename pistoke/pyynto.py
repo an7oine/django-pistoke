@@ -74,20 +74,47 @@ class WebsocketPyynto(ASGIRequest):
 
   # Lisätään `tarkista_csrf`-metodin toteutus Django-versiokohtaisesti.
   # pylint: disable=no-name-in-module, undefined-variable
-  if django_version >= (4, 0):
-    from django.middleware.csrf import _does_token_match
+  if django_version >= (4, 1):
+    def tarkista_csrf(self, csrf_token):
+      ''' Vrt. django.middleware.csrf:CsrfMiddleware._check_token. '''
+      # pylint: disable=no-member
+      from django.middleware.csrf import (
+        _check_token_format,
+        _does_token_match,
+        InvalidTokenFormat,
+      )
+      if csrf_token is None:
+        return False
+      if settings.CSRF_USE_SESSIONS:
+        csrf_secret = self.session.get(CSRF_SESSION_KEY)
+      else:
+        csrf_secret = self.COOKIES[settings.CSRF_COOKIE_NAME]
+      if csrf_secret is None:
+        return False
+      try:
+        _check_token_format(csrf_token)
+        _check_token_format(csrf_secret)
+      except InvalidTokenFormat:
+        return False
+      return _does_token_match(csrf_token, csrf_secret)
+      # def tarkista_csrf
+    # if django_version >= 4.1
   else:
-    from django.middleware.csrf import (
-      _compare_masked_tokens as _does_token_match
-    )
-  from django.middleware.csrf import _sanitize_token
-  def tarkista_csrf(self, csrf_token):
-    return csrf_token \
-    and self.META.get('CSRF_COOKIE') \
-    and _does_token_match(
-      _sanitize_token(csrf_token),
-      self.META.get('CSRF_COOKIE'),
-    )
+    if django_version >= (4, 0):
+      from django.middleware.csrf import _does_token_match
+    else:
+      from django.middleware.csrf import (
+        _compare_masked_tokens as _does_token_match
+      )
+    from django.middleware.csrf import _sanitize_token
+    def tarkista_csrf(self, csrf_token):
+      return csrf_token \
+      and self.META.get('CSRF_COOKIE') \
+      and _does_token_match(
+        _sanitize_token(csrf_token),
+        self.META.get('CSRF_COOKIE'),
+      )
+    # else (if django_version < 4.1)
   # pylint: enable=no-name-in-module, undefined-variable
   tarkista_csrf.__doc__ = '''
   Tarkista pyyntödatan mukana saatu CSRF-tunniste evästeenä
