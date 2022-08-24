@@ -50,39 +50,8 @@ class OhitaPaluusanoma:
 class CsrfOhjain(OhitaPaluusanoma, CsrfViewMiddleware):
   def process_view(self, request, callback, callback_args, callback_kwargs):
     '''
-    Lisätään Websocket-pyyntöön metodi `_tarkista_csrf` pyyntödatan
-    mukana luettavan CSRF-tunnisteen tarkistamiseen.
-
-    Ohitetaan tavanomainen CSRF-tarkistus POST-datasta (super).
+    Ohitetaan tavanomainen CSRF-tarkistus POST-datasta.
     '''
-    # pylint: disable=protected-access
-    try:
-      # Django >= 4.0
-      from django.middleware.csrf import _does_token_match
-    except ImportError:
-      # Django < 4.0
-      from django.middleware.csrf import (
-        _compare_masked_tokens as _does_token_match
-      )
-    from django.middleware.csrf import _sanitize_token
-    def tarkista_csrf(csrf_token):
-      return csrf_token \
-      and request.META.get('CSRF_COOKIE') \
-      and _does_token_match(
-        _sanitize_token(csrf_token),
-        request.META.get('CSRF_COOKIE'),
-      )
-    def _tarkista_csrf(csrf_token):
-      import warnings
-      warnings.warn(
-        'Metodi `request._tarkista_csrf` on nimetty uudelleen:'
-        ' `request.tarkista_csrf`.',
-        DeprecationWarning
-      )
-      return tarkista_csrf(csrf_token)
-    request.tarkista_csrf = tarkista_csrf
-    request._tarkista_csrf = _tarkista_csrf
-    # def process_view
   # class CsrfOhjain
 
 

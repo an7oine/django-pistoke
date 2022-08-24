@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 
+from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.http import QueryDict
+from django import VERSION as django_version
 
 
 class WebsocketPyynto(ASGIRequest):
@@ -69,5 +71,27 @@ class WebsocketPyynto(ASGIRequest):
 
     self.resolver_match = None
     # def __init__
+
+  # Lisätään `tarkista_csrf`-metodin toteutus Django-versiokohtaisesti.
+  # pylint: disable=no-name-in-module, undefined-variable
+  if django_version >= (4, 0):
+    from django.middleware.csrf import _does_token_match
+  else:
+    from django.middleware.csrf import (
+      _compare_masked_tokens as _does_token_match
+    )
+  from django.middleware.csrf import _sanitize_token
+  def tarkista_csrf(self, csrf_token):
+    return csrf_token \
+    and self.META.get('CSRF_COOKIE') \
+    and _does_token_match(
+      _sanitize_token(csrf_token),
+      self.META.get('CSRF_COOKIE'),
+    )
+  # pylint: enable=no-name-in-module, undefined-variable
+  tarkista_csrf.__doc__ = '''
+  Tarkista pyyntödatan mukana saatu CSRF-tunniste evästeenä
+  annettua tunnistetta vasten.
+  '''
 
   # class WebsocketPyynto
