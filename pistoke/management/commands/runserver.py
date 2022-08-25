@@ -140,6 +140,8 @@ class Command(_Command):
         3: 'trace',
       }.get(options['verbosity'], options['verbosity'] or 'info'),
       reload=options['use_reloader'],
+      reload_includes=['*'],
+      reload_excludes=['*/.git/*'],
       **(
         {'use_colors': True} if options['force_color']
         else {'use_colors': False} if options['no_color']
