@@ -7,8 +7,9 @@ from asgiref.sync import sync_to_async
 
 import django
 from django.conf import settings
-from django.core.handlers.asgi import ASGIHandler
+from django.core.handlers.asgi import ASGIHandler, logger
 from django.core import signals
+from django.http import HttpResponse
 from django.test.utils import override_settings
 from django.urls import set_script_prefix, set_urlconf
 
@@ -135,7 +136,14 @@ class WebsocketKasittelija(ASGIHandler):
       # Websocket-pyynnölle.
       # Huomaa, että WS-kättely (connect + accept) oletetaan suoritetuksi
       # ennen virhesanoman muodostumista.
-      await self.send_response(nakyma, send)
+      if isinstance(vastaus := nakyma, HttpResponse):
+        if hasattr(vastaus, 'is_rendered') and not vastaus.is_rendered:
+          vastaus.render()
+        await self.send_response(vastaus, send)
+      else:
+        logger.warning(
+          f'Saatiin vastaus {nakyma!r}'
+        )
       # Suljetaan yhteys ja tehdään Django-ylläpitotoimet per pyyntö.
       await send({'type': 'websocket.close'})
       await sync_to_async(
