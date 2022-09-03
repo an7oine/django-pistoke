@@ -88,6 +88,7 @@ uvicorn_application_static = Kasittelija(
 
 
 class Command(_Command):
+
   def add_arguments(self, parser):
     # pylint: disable=protected-access
     super().add_arguments(parser)
@@ -119,6 +120,16 @@ class Command(_Command):
       default=oletus_asgi,
       help=f'Käynnistä WSGI-palvelin (oletus{" ASGI" if oletus_asgi else ""}).'
     )
+    parser.add_argument(
+      '--ssl-keyfile',
+      default=getattr(self, 'oletus_ssl_keyfile', None),
+      help=f'SSL-avaintiedosto (HTTPS)',
+    )
+    parser.add_argument(
+      '--ssl-certfile',
+      default=getattr(self, 'oletus_ssl_certfile', None),
+      help=f'SSL-varmennetiedosto (HTTPS)',
+    )
     # def add_arguments
 
   def asgi_run(self, addr, port, asgi_handler, **options):
@@ -147,6 +158,10 @@ class Command(_Command):
         else {'use_colors': False} if options['no_color']
         else {}
       ),
+      **({
+        'ssl_keyfile': options['ssl_keyfile'],
+        'ssl_certfile': options['ssl_certfile'],
+      } if options['ssl_keyfile'] and options['ssl_certfile'] else {}),
     )
     # def run
 
