@@ -3,85 +3,125 @@
 import functools
 import json
 
-
-def json_viestiliikenne(*args, **kwargs):
-  ''' Lähetä ja vastaanota JSON-muodossa. '''
-  def _json_viestiliikenne(websocket, *, loads=None, dumps=None):
-    @functools.wraps(websocket)
-    async def _websocket(self, request, *args, **kwargs):
-
-      @functools.wraps(request.receive)
-      async def receive():
-        return json.loads(
-          await receive.__wrapped__(), **loads or {}
-        )
-      request.receive = receive
-
-      @functools.wraps(request.send)
-      async def send(viesti):
-        return await send.__wrapped__(json.dumps(
-          viesti, **dumps or {}
-        ))
-      request.send = send
-
-      return await _websocket.__wrapped__(self, request, *args, **kwargs)
-      # async def websocket
-
-    return _websocket
-    # def _json_viestiliikenne
-  if args:
-    return _json_viestiliikenne(*args, **kwargs)
-  else:
-    return functools.partial(_json_viestiliikenne, **kwargs)
-  # def json_viestiliikenne
+# pylint: disable=unused-import
+from .poistuvat import (
+  csrf_tarkistus,
+  json_viestiliikenne,
+  protokolla,
+)
+# pylint: enable=unused-import
 
 
-def csrf_tarkistus(*args, **kwargs):
-  '''
-  Tarkista ensimmäisen sanoman mukana toimitettu CSRF-tunniste.
+class Koriste:
 
-  Jos parametri `csrf_avain` on annettu, poimitaan sanakirjamuotoisesta
-  syötteestä.
-  '''
-  def _csrf_tarkistus(websocket, csrf_avain=None, virhe_avain=None):
-    @functools.wraps(websocket)
-    async def _websocket(self, request, *args, **kwargs):
-      try:
-        kattely = await request.receive()
-      except ValueError:
-        virhe = 'Yhteyden muodostus epäonnistui!'
-        return await request.send({
-          virhe_avain: virhe
-        } if virhe_avain else virhe)
+  def __new__(cls, f=None, **kwargs):
+    '''
+    Kääritään olio annetun `f`-toteutuksen mukaan.
+    Mikäli tätä ei annettu, palautetaan olion sijaan sulkeuma.
+    '''
+    if f is None:
+      return functools.partial(cls, **kwargs)
+    return functools.wraps(
+      f
+    )(super().__new__(cls))
+    # def __new__
 
-      # Koriste `method_decorator(csrf_exempt)` ohittaa tarkistuksen.
-      if not getattr(getattr(self, 'websocket'), 'csrf_exempt', False) \
-      and not request.tarkista_csrf(
-        kattely.get(csrf_avain) if csrf_avain else kattely
-      ):
-        virhe = 'CSRF-avain puuttuu tai se on virheellinen!'
-        return await request.send({
-          virhe_avain: virhe
-        } if virhe_avain else virhe)
+  def __init__(self, websocket):
+    '''
+    Parametriä `f` käytetään vain `__new__`-metodissa.
+    '''
+    # pylint: disable=unused-argument
+    super().__init__()
+    # def __init__
 
-      self._websocket_kattely = kattely
-      return await _websocket.__wrapped__(self, request, *args, **kwargs)
-      # async def _websocket
+  def __call__(self, request, *args, **kwargs):
+    return self.__wrapped__(request, *args, **kwargs)
+    # def __call__
 
-    return _websocket
-    # def _csrf_tarkistus
-  if args:
-    return _csrf_tarkistus(*args, **kwargs)
-  else:
-    return functools.partial(_csrf_tarkistus, **kwargs)
-  # def csrf_tarkistus
+  # class Koriste
 
 
-def origin_poikkeus(nakyma):
+class OriginPoikkeus(Koriste):
   ''' Ohita Origin-otsakkeen tarkistus Websocket-pyynnön yhteydessä. '''
-  @functools.wraps(nakyma)
-  def _nakyma(*args, **kwargs):
-    return nakyma(*args, **kwargs)
-  _nakyma.origin_poikkeus = True
-  return _nakyma
+  def __init__(self, websocket):
+    super().__init__(websocket)
+    websocket.origin_poikkeus = True
   # def origin_poikkeus
+
+
+class JsonLiikenne(Koriste):
+
+  def __init__(
+    self,
+    websocket, *,
+    loads=None,
+    dumps=None,
+  ):
+    super().__init__(websocket)
+    self.loads = loads or {}
+    self.dumps = dumps or {}
+    # def __init__
+
+  async def __call__(self, request, *args, **kwargs):
+    @functools.wraps(request.receive)
+    async def receive():
+      return json.loads(
+        await receive.__wrapped__(),
+        **self.loads
+      )
+    @functools.wraps(request.send)
+    async def send(s):
+      return await send.__wrapped__(
+        json.dumps(s, **self.dumps)
+      )
+    request.receive = receive
+    request.send = send
+    try:
+      return await self.__wrapped__(
+        request, *args, **kwargs
+      )
+    finally:
+      request.receive = receive.__wrapped__
+      request.send = send.__wrapped__
+    # async def __call__
+
+  # class JsonLiikenne
+
+
+class CsrfKattely(Koriste):
+
+  def __init__(
+    self,
+    websocket, *,
+    csrf_avain=None,
+    virhe_avain=None
+  ):
+    super().__init__(websocket)
+    self.csrf_avain = csrf_avain
+    self.virhe_avain = virhe_avain
+    # def __init__
+
+  async def __call__(self, request, *args, **kwargs):
+    try:
+      kattely = await request.receive()
+    except ValueError:
+      virhe = 'Yhteyden muodostus epäonnistui!'
+      return await request.send({
+        self.virhe_avain: virhe
+      } if self.virhe_avain is not None else virhe)
+    if not request.tarkista_csrf(
+      kattely.get(self.csrf_avain)
+      if self.csrf_avain else kattely
+    ):
+      virhe = 'CSRF-avain puuttuu tai se on virheellinen!'
+      return await request.send({
+        self.virhe_avain: virhe
+      } if self.virhe_avain else virhe)
+
+    request._csrf_kattely = kattely
+    return await self.__wrapped__(
+      request, *args, **kwargs
+    )
+    # async def __call__
+
+  # class CsrfKattely

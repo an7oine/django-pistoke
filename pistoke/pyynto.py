@@ -19,9 +19,11 @@ class WebsocketPyynto(ASGIRequest):
   POST = QueryDict()
   FILES = {}
 
-  def __init__(self, scope):
+  def __init__(self, scope, receive, send):
     # pylint: disable=super-init-not-called
     self.scope = scope
+    self.receive = receive
+    self.send = send
     self._post_parse_error = False
     self._read_started = False
     self.resolver_match = None
