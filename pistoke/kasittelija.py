@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
-import json
+import logging
 
 # Python 3.7+
 try: from contextlib import asynccontextmanager
@@ -19,6 +19,9 @@ from django.urls import set_script_prefix, set_urlconf
 
 from pistoke.ohjain import WEBSOCKET_MIDDLEWARE
 from pistoke.pyynto import WebsocketPyynto
+
+
+loki = logging.getLogger('django.' + __name__)
 
 
 class WebsocketVirhe(RuntimeError):
@@ -154,24 +157,26 @@ class WebsocketKasittelija(ASGIHandler):
       )(
         request, *callback_args, **callback_kwargs
       )
-      # Tuloksena tulee palautua `async def websocket(...)`-metodin
-      # tuottama alirutiini.
+      # Mikäli tuloksena palautuu `async def websocket(...)`-metodin
+      # (tai vastaavan) tuottama alirutiini, palautetaan se.
       if asyncio.iscoroutine(nakyma):
         return nakyma
-      # Muussa tapauksessa kyse on ohjelmointivirheestä.
-      raise ValueError(
-        'Näkymä %r palautti alirutiinin sijaan arvon %r.' % (
-          callback,
-          nakyma,
-        )
+      # Muussa tapauksessa kyse voi olla esim. uudelleenohjauksesta
+      # kirjautumissivulle.
+      # Evätään tällöin Websocket-pyyntö.
+      loki.debug(
+        'Websocket-näkymä %r palautti alirutiinin sijaan arvon %r.',
+        getattr(callback, 'view_class', callback),
+        nakyma,
       )
+      from pistoke.protokolla import WebsocketProtokolla
+      @WebsocketProtokolla
+      async def evatty(*args, **kwargs): pass
+      return evatty
     else:
       raise ValueError(
-        'Näkymä %r ei ole kelvollinen funktio.' % (
-          callback,
-        )
+        f'Websocket-näkymä {callback!r} ei ole kelvollinen funktio.'
       )
-
     # async def _get_response_async
 
   # class WebsocketKasittelija
