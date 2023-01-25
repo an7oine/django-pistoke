@@ -134,7 +134,7 @@ class WebsocketKasittelija(ASGIHandler):
       )
       if vastaus is not None:
         return await self.send_response(
-          request, vastaus
+          vastaus, request.send
         )
       # for middleware_method in self._view_middleware
 
