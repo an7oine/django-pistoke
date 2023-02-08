@@ -28,6 +28,7 @@ if 'django.contrib.staticfiles' in settings.INSTALLED_APPS:
     Command as _Command
   )
   from django.contrib.staticfiles.handlers import StaticFilesHandlerMixin
+  from django.utils.cache import add_never_cache_headers
   class static_handler(StaticFilesHandlerMixin, ASGIHandler):
     ''' Vrt. staticfiles.handlers.ASGIStaticFilesHandler '''
     def __init__(self):
@@ -35,6 +36,13 @@ if 'django.contrib.staticfiles' in settings.INSTALLED_APPS:
       # Ei kutsuta `ASGIHandler.__init__`-metodia,
       # joka lataa välikkeet (middleware); niitä ei tarvita.
       self.base_url = urlparse(self.get_base_url())
+      # def __init__
+    def serve(self, request):
+      # Kielletään staattisten tiedostojen paikallinen välimuisti.
+      tulos = super().serve(request)
+      add_never_cache_headers(tulos)
+      return tulos
+      # def serve
     # class static_handler
   # if 'django.contrib.staticfiles' in settings.INSTALLED_APPS
 
