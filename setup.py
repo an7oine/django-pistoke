@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 setup(
-  setup_requires='git-versiointi',
+  setup_requires='git-versiointi>=1.6b4',
   name='django-pistoke',
   description='Django-Websocket-laajennos',
   url='https://github.com/an7oine/django-pistoke.git',
