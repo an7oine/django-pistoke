@@ -120,15 +120,21 @@ class WebsocketKasittelija(ASGIHandler):
   async def _get_response_async(self, request):
     ''' Ohitetaan paluusanoman käsittelyyn liittyvät funktiokutsut. '''
     # pylint: disable=not-callable, protected-access
+    from pistoke.protokolla import WebsocketProtokolla
+    @WebsocketProtokolla
+    async def evatty(*args, **kwargs): pass
+
     callback, callback_args, callback_kwargs = self.resolve_request(request)
     for middleware_method in self._view_middleware:
       vastaus = await middleware_method(
         request, callback, callback_args, callback_kwargs
       )
       if vastaus is not None:
-        return await self.send_response(
-          vastaus, request.send
+        loki.debug(
+          'Ohjainketju palautti HTTP-vastauksen %r.',
+          vastaus,
         )
+        return evatty
       # for middleware_method in self._view_middleware
 
     # Mikäli `callback` on asynkroninen funktio (tai kääre),
@@ -162,9 +168,6 @@ class WebsocketKasittelija(ASGIHandler):
         getattr(callback, 'view_class', callback),
         nakyma,
       )
-      from pistoke.protokolla import WebsocketProtokolla
-      @WebsocketProtokolla
-      async def evatty(*args, **kwargs): pass
       return evatty
     else:
       raise ValueError(
