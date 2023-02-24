@@ -36,7 +36,10 @@ from django.http.request import split_domain_port, validate_host
 from django.http import HttpResponseForbidden
 from django.middleware.csrf import CsrfViewMiddleware
 from django.utils.decorators import sync_and_async_middleware
+from django.utils.module_loading import import_string
 from django.utils.log import log_response
+
+import mmaare
 
 
 logger = logging.getLogger('django.pistoke.origin')
@@ -77,7 +80,11 @@ class WebsocketOhjain:
 
 @sync_and_async_middleware
 class OriginVaatimus:
-
+  '''
+  Ohjain, joka tarkistaa mahdollisen Websocket-pyynnöllä annetun
+  Origin-otsakkeen vastaavasti kuin Django-CSRF-ohjain tarkistaa
+  sen POST-pyynnöllä.
+  '''
   def __init__(self, get_response):
     self.get_response = get_response
     if asyncio.iscoroutinefunction(self.get_response):
@@ -136,28 +143,53 @@ class IstuntoOhjain(OhitaPaluusanoma, SessionMiddleware):
 
 # Muunnostaulu Websocket-pyyntöihin sovellettavista
 # Middleware-ohjaimista.
-# Muiden kuin tässä mainittujen ohjaimien lataus ohitetaan.
+# Muut kuin tässä mainitut ohjaimet periytetään automaattisesti
+# `OhitaPaluusanoma`-saateluokasta.
 WEBSOCKET_MIDDLEWARE = {
-  # Ohitetaan.
+  # Ohitetaan kokonaan.
   'corsheaders.middleware.CorsMiddleware': False,
   'debug_toolbar.middleware.DebugToolbarMiddleware': False,
   'django.middleware.gzip.GZipMiddleware': False,
-  'django.middleware.security.SecurityMiddleware' : False,
-  'django.middleware.common.CommonMiddleware': False,
   'django.middleware.clickjacking.XFrameOptionsMiddleware': False,
   'django_hosts.middleware.HostsResponseMiddleware': False,
 
-  # Suoritetaan.
-  'django_hosts.middleware.HostsRequestMiddleware': True,
+  # Korvataan muunnoksella.
   'django.middleware.csrf.CsrfViewMiddleware': 'pistoke.ohjain.CsrfOhjain',
   'django.contrib.sessions.middleware.SessionMiddleware': \
     'pistoke.ohjain.IstuntoOhjain',
-  'django.contrib.auth.middleware.AuthenticationMiddleware': True,
-  'django.contrib.messages.middleware.MessageMiddleware': True,
-  'impersonate.middleware.ImpersonateMiddleware': True,
-  'silk.middleware.SilkyMiddleware': True,
 
-  # Lisätty.
+  # Suoritetaan sellaisenaan.
   'pistoke.ohjain.WebsocketOhjain': True,
-  'pistoke.ohjain.OriginVaatimus': True,
 }
+
+
+def sovita_ohjain_websocket_pyynnolle(ohjain):
+  if isinstance(ohjain, str):
+    ohjain = import_string(ohjain)
+  assert isinstance(ohjain, type)
+  return type(
+    ohjain.__name__,
+    (OhitaPaluusanoma, ohjain),
+    {}
+  )
+  # def sovita_ohjain_websocket_pyynnolle
+
+@mmaare
+def __websocket_ohjaimet(moduuli):
+  def _websocket_ohjaimet():
+    for ohjain in settings.MIDDLEWARE:
+      muunnos = WEBSOCKET_MIDDLEWARE.get(ohjain, None)
+      if muunnos is False:
+        continue
+      elif muunnos is True:
+        yield ohjain
+        continue
+      elif muunnos is not None:
+        yield muunnos
+        continue
+      ohjain = sovita_ohjain_websocket_pyynnolle(ohjain)
+      setattr(moduuli, ohjain.__name__, ohjain)
+      yield '.'.join((__name__, ohjain.__name__))
+    yield 'pistoke.ohjain.OriginVaatimus'
+  return list(_websocket_ohjaimet())
+  # def __websocket_ohjaimet

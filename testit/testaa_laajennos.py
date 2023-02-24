@@ -40,11 +40,6 @@ class Laajennos(SimpleTestCase):
       settings.MIDDLEWARE,
       msg='välikettä (middleware) WebsocketOhjain ei lisätty'
     )
-    self.assertIn(
-      'pistoke.ohjain.OriginVaatimus',
-      settings.MIDDLEWARE,
-      msg='välikettä (middleware) OriginVaatimus ei lisätty'
-    )
     # def testaa_parametrit
 
   @override_settings(

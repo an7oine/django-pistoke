@@ -17,7 +17,6 @@ from django.core import signals
 from django.test.utils import override_settings
 from django.urls import set_script_prefix, set_urlconf
 
-from pistoke.ohjain import WEBSOCKET_MIDDLEWARE
 from pistoke.pyynto import WebsocketPyynto
 
 
@@ -101,14 +100,8 @@ class WebsocketKasittelija(ASGIHandler):
     Ajetaan vain muunnostaulun mukaiset Websocket-pyynnölle käyttöön
     otettavat ohjaimet.
     '''
-    with override_settings(MIDDLEWARE=list(filter(None, (
-      ws_ohjain if isinstance(ws_ohjain, str)
-      else ohjain if ws_ohjain else None
-      for ohjain, ws_ohjain in (
-        (ohjain, WEBSOCKET_MIDDLEWARE.get(ohjain, False))
-        for ohjain in settings.MIDDLEWARE
-      )
-    )))):
+    from pistoke.ohjain import websocket_ohjaimet
+    with override_settings(MIDDLEWARE=websocket_ohjaimet):
       super().load_middleware(is_async=is_async)
     # def load_middleware
 
