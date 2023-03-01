@@ -14,7 +14,7 @@ setup(
   include_package_data=True,
   python_requires='>=3.6',
   install_requires=[
-    'django>=3.1',
+    'django>=3.2',
     'python-mmaare',
   ],
   extras_require={
