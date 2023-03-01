@@ -43,9 +43,7 @@ class Koriste:
 
 class OriginPoikkeus(Koriste):
   ''' Ohita Origin-otsakkeen tarkistus Websocket-pyynnön yhteydessä. '''
-  def __init__(self, websocket):
-    super().__init__(websocket)
-    websocket.origin_poikkeus = True
+  origin_poikkeus = True
   # def origin_poikkeus
 
 
