@@ -14,6 +14,7 @@ MIDDLEWARE = [
   'django.middleware.csrf.CsrfViewMiddleware',
   'django.contrib.auth.middleware.AuthenticationMiddleware',
   'django.middleware.clickjacking.XFrameOptionsMiddleware',
+  'pistoke.ohjain.WebsocketOhjain',
 ]
 
 SECRET_KEY = 'epäjärjestelmällistyttämättömyydellänsäkäänköhän'
