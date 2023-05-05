@@ -96,6 +96,8 @@ class OriginVaatimus:
     # def __call__
 
   def process_view(self, request, callback, callback_args, callback_kwargs):
+    # pylint: disable=unused-argument
+    assert request.method == 'Websocket'
     if getattr(callback, 'origin_poikkeus', False):
       return None
     elif 'HTTP_ORIGIN' not in request.META:
