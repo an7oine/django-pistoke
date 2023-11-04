@@ -5,10 +5,14 @@ from django.apps import AppConfig
 from .nakyma import (
   WebsocketNakyma,
 )
-from .protokolla import (
-  WebsocketProtokolla,
-  WebsocketAliprotokolla,
-)
+
+try:
+  from .protokolla import (
+    WebsocketProtokolla,
+    WebsocketAliprotokolla,
+  )
+except ImportError:
+  pass
 
 
 class Pistoke(AppConfig):
