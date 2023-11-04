@@ -19,6 +19,8 @@ from django.db import close_old_connections
 from django.test.client import AsyncClient
 
 from pistoke.kasittelija import WebsocketKasittelija
+from pistoke.protokolla import _WebsocketProtokolla
+from pistoke.pyynto import WebsocketPyynto
 
 
 class KattelyEpaonnistui(Exception):
@@ -92,92 +94,53 @@ class WebsocketPaateKasittelija(WebsocketKasittelija):
   # class WebsocketPaateKasittelija
 
 
-class WebsocketPaateprotokolla:
+class WebsocketPaateprotokolla(_WebsocketProtokolla):
   '''
   Käänteinen Websocket-protokolla, so. selaimen / ASGI-palvelimen näkökulma.
 
   Vrt. `pistoke.protokolla.WebsocketProtokolla`.
   '''
-  async def avaa_yhteys(self, receive, send):
-    await asyncio.wait_for(send({
-      'type': 'websocket.connect'
-    }), 0.1)
-    kattely = await asyncio.wait_for(receive(), 0.1)
+  saapuva_kattely = {'type': 'websocket.accept'}
+  lahteva_kattely = {'type': 'websocket.connect'}
+  saapuva_katkaisu = {'type': 'websocket.close'}
+  lahteva_katkaisu = {'type': 'websocket.disconnect'}
+  lahteva_sanoma = {'type': 'websocket.receive'}
+  saapuva_sanoma = {'type': 'websocket.send'}
+
+  async def _avaa_yhteys(self, request):
+    await asyncio.wait_for(request.send(self.lahteva_kattely), 0.1)
+    kattely = await asyncio.wait_for(request.receive(), 0.1)
     if not isinstance(kattely, dict) or 'type' not in kattely:
       raise KattelyEpaonnistui(
         'Virheellinen kättely: %r' % kattely
       )
-    if kattely['type'] == 'websocket.close':
+    if kattely == self.saapuva_katkaisu:
       raise Http403(
         'Palvelin sulki yhteyden.'
       )
-    elif kattely['type'] == 'websocket.accept':
+    elif kattely['type'] == self.saapuva_kattely['type']:
       if 'subprotocol' in kattely:
-        return kattely['subprotocol']
+        request.scope['subprotocol'] = kattely['subprotocol']
     else:
       raise KattelyEpaonnistui(
         'Virheellinen kättely: %r' % kattely
       )
-    # async def avaa_yhteys
-
-  async def sulje_yhteys(self, receive, send):
-    try:
-      await send({'type': 'websocket.disconnect'})
-    except asyncio.CancelledError:
-      # Huomaa, että poikkeukseen päättyneen istunnon
-      # päätteeksi ei välttämättä pystytä lähettämään
-      # `disconnect`-sanomaa.
-      pass
-    # async def sulje_yhteys
-
-  async def vastaanota_sanoma(self, receive):
-    sanoma = await receive()
-    if isinstance(sanoma, BaseException):
-      raise sanoma
-    assert isinstance(sanoma, dict) and 'type' in sanoma, \
-    'Virheellinen sanoma: %r' % sanoma
-    if sanoma['type'] == 'websocket.send':
-      return sanoma.get('text', sanoma.get('bytes', None))
-    elif sanoma['type'] == 'websocket.close':
-      raise asyncio.CancelledError
-    else:
-      raise TypeError(repr(sanoma))
-    # async def vastaanota_sanoma
-
-  async def laheta_sanoma(self, send, data):
-    '''
-    Lähetetään annettu data joko tekstinä tai tavujonona.
-    '''
-    if isinstance(data, str):
-      data = {'type': 'websocket.receive', 'text': data}
-    elif isinstance(data, bytearray):
-      data = {'type': 'websocket.receive', 'bytes': bytes(data)}
-    elif isinstance(data, bytes):
-      data = {'type': 'websocket.receive', 'bytes': data}
-    else:
-      raise TypeError(repr(data))
-    return await send(data)
-    # async def send
+    # async def _avaa_yhteys
 
   @asynccontextmanager
   async def __call__(self, scope, receive, send):
-    try:
-      protokolla = await self.avaa_yhteys(receive, send)
-      if protokolla is not None:
-        scope['subprotocol'] = protokolla
-      yield SimpleNamespace(
-        scope=scope,
-        receive=functools.partial(
-          self.vastaanota_sanoma, receive
-        ),
-        send=functools.partial(
-          self.laheta_sanoma, send
-        ),
+    async with super().__call__(
+      WebsocketPyynto(scope, receive, send),
+    ) as (request, _receive):
+      _task = asyncio.tasks.current_task()
+      _receive = asyncio.create_task(_receive())
+      _receive.add_done_callback(
+        lambda __receive: _task.cancel()
       )
+      yield request
+      _receive.cancel()
+      await _receive
 
-    finally:
-      await self.sulje_yhteys(receive, send)
-      # finally
     # def __call__
 
   # class WebsocketPaateprotokolla
@@ -189,80 +152,6 @@ class WebsocketYhteys:
     self.scope = scope
     self.syote, self.tuloste = Queue(), Queue()
     self.enforce_csrf_checks = enforce_csrf_checks
-
-  def __call__(self, paate):
-    assert asyncio.iscoroutinefunction(paate)
-
-    @functools.wraps(paate)
-    async def _paate():
-      async def paate_taustalla():
-        async with WebsocketPaateprotokolla()(
-          self.scope,
-          self.tuloste.get,
-          self.syote.put,
-        ) as request:
-          return await paate(request)
-      paate_taustalla = asyncio.ensure_future(
-        paate_taustalla()
-      )
-
-      kasittelija = WebsocketPaateKasittelija(
-        enforce_csrf_checks=self.enforce_csrf_checks
-      )
-      nakyma = kasittelija(
-        self.scope,
-        self.syote.get,
-        self.tuloste.put,
-      )
-
-      @paate_taustalla.add_done_callback
-      def paate_valmis(_paate_taustalla):
-        '''
-        Katkaise syötteen luku ja tulosteen kirjoitus.
-        '''
-        self.syote.katkaise_get()
-        self.tuloste.katkaise_put()
-        nakyma.throw(RuntimeError, 'Yhteys katkaistiin')
-        # def paate_valmis
-
-      try:
-        await nakyma
-      finally:
-        # Kun näkymä on valmis, odotetaan siksi kunnes
-        # testi päättyy tai kaikki tuloste on luettu.
-        await asyncio.wait(
-          (
-            asyncio.ensure_future(self.tuloste.join()),
-            paate_taustalla,
-          ),
-          return_when=asyncio.FIRST_COMPLETED
-        )
-        try:
-          poikkeus = paate_taustalla.exception()
-        except asyncio.CancelledError:
-          # Mikäli pääte keskeytettiin, nostetaan
-          # tämä poikkeus alempana.
-          pass
-        except asyncio.InvalidStateError:
-          # Mikäli pääte on edelleen kesken,
-          # keskeytetään se ja nostetaan mahdollinen
-          # muu kuin keskeytykseen liittyvä poikkeus.
-          paate_taustalla.cancel()
-          try:
-            await paate_taustalla
-          except asyncio.CancelledError:
-            pass
-        else:
-          if poikkeus is not None:
-            raise poikkeus
-          # else
-        # Palautetaan päätteen tulos (tai nostetaan
-        # CancelledError).
-        return paate_taustalla.result()
-        # finally
-      # async def _paate
-    return _paate
-    # def __call__
 
   async def __aenter__(self):
     kasittelija = WebsocketPaateKasittelija(
@@ -277,11 +166,17 @@ class WebsocketYhteys:
         self.tuloste.put,
       )
     )
+    paate = asyncio.tasks.current_task()
     @nakyma.add_done_callback
     def nakyma_valmis(_nakyma):
       ''' Katkaise syötteen kirjoitus ja tulosteen luku. '''
       self.syote.katkaise_put()
       self.tuloste.katkaise_get()
+      try:
+        if poikkeus := _nakyma.exception():
+          paate.set_exception(poikkeus)
+      except asyncio.CancelledError:
+        pass
 
     # Tee avaava kättely, odota hyväksyntää.
     protokolla = WebsocketPaateprotokolla()(
@@ -299,27 +194,25 @@ class WebsocketYhteys:
     # näkymä päättyy tai kaikki syöte on luettu.
     nakyma = self._nakyma
     await self._protokolla.__aexit__(*exc)
-    await asyncio.wait(
-      (
-        asyncio.ensure_future(self.syote.join()),
-        nakyma,
-      ),
-      return_when=asyncio.FIRST_COMPLETED
+    kesken = (
+      asyncio.ensure_future(self.syote.join()),
+      nakyma,
     )
-    try:
-      poikkeus = nakyma.exception()
-    except asyncio.CancelledError:
-      pass
-    except asyncio.InvalidStateError:
-      nakyma.cancel()
+    valmis, kesken = await asyncio.wait(
+      kesken,
+      return_when=asyncio.FIRST_COMPLETED,
+    )
+    if kesken:
+      for _kesken in kesken:
+        _kesken.cancel()
+      _valmis, kesken = await asyncio.wait(kesken)
+      valmis = valmis | _valmis
+    for _valmis in valmis:
       try:
-        await nakyma
+        if poikkeus := _valmis.exception():
+          raise poikkeus
       except asyncio.CancelledError:
         pass
-    else:
-      if poikkeus is not None:
-        raise poikkeus
-        # if poikkeus is not None
       # else
     # async def __aexit__
 
@@ -385,38 +278,20 @@ class WebsocketPaate(AsyncClient):
 
   def websocket(self, *args, **kwargs):
     '''
-    Avaa Websocket-yhteys, suorita päätefunktio:
-      >>> class Testi(TestCase):
+    Käyttö asynkronisena kontekstina:
+      >>> class Testi(SimpleTestCase):
+      >>>
+      >>>   async_client_class = WebsocketPaate
+      >>>
       >>>   async def testaa_X(self):
-      >>>     @self.async_client.websocket(...)
-      >>>     async def yhteys(websocket):
-      >>>       websocket.send(...)
-      >>>       ... = await websocket.receive()
-      >>>       return True
-      >>>     self.assertTrue(await yhteys())
-
-    Tällöin annettu funktio (`yhteys()`) suoritetaan
-    tausta-ajona (asyncio.Task) ja testattava näkymä
-    ympäröivässä kontekstissa.
-
-    Metodia voidaan käyttää myös asynkronisena
-    kontekstina:
-      >>>   async def testaa_Y(self):
       >>>     async with self.async_client.websocket(
-      >>>       ...
+      >>>       '/.../'
       >>>     ) as websocket:
       >>>       websocket.send(...)
       >>>       ... = await websocket.receive()
 
-    Huomaa, että tässä funktio ajetaan ympäröivässä
-    kontekstissa ja itse näkymä tausta-ajona. Tällä erolla saattaa olla
-    merkitystä lähinnä tietokantakyselyiden yhteydessä.
-
-    Args:
-      *args, **kwargs: pyynnön parametrit
-
-    Returns:
-      websocket: koriste tai asynkroninen konteksti
+    Annettu testirutiini suoritetaan ympäröivässä kontekstissa
+    ja testattava näkymä tausta-ajona (asyncio.Task).
     '''
     # pylint: disable=protected-access
 
@@ -426,8 +301,7 @@ class WebsocketPaate(AsyncClient):
         *args,
         **kwargs
       ),
-      enforce_csrf_checks
-      =self.handler.enforce_csrf_checks,
+      enforce_csrf_checks=self.handler.enforce_csrf_checks,
     )
     # async def websocket
 

@@ -14,11 +14,14 @@ from .poistuvat import (
 
 class Koriste:
 
+  __wrapped__: callable
+
   def __new__(cls, f=None, **kwargs):
     '''
     Kääritään olio annetun `f`-toteutuksen mukaan.
     Mikäli tätä ei annettu, palautetaan olion sijaan sulkeuma.
     '''
+    # pylint: disable=invalid-name
     if f is None:
       return functools.partial(cls, **kwargs)
     return functools.wraps(
@@ -26,11 +29,11 @@ class Koriste:
     )(super().__new__(cls))
     # def __new__
 
-  def __init__(self, websocket):
+  def __init__(self, f):
     '''
     Parametriä `f` käytetään vain `__new__`-metodissa.
     '''
-    # pylint: disable=unused-argument
+    # pylint: disable=invalid-name, unused-argument
     super().__init__()
     # def __init__
 
