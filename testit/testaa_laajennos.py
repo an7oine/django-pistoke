@@ -1,20 +1,28 @@
 # -*- coding: utf-8 -*-
 
 import importlib
-
-import pkg_resources
+from importlib.metadata import entry_points
+from sys import version_info
 
 from django.conf import settings
 from django.test import SimpleTestCase
 from django.test.utils import override_settings
 
 
+_entry_points = (
+  # Ks. https://docs.python.org/3/library/importlib.metadata.html#entry-points.
+  entry_points
+  if version_info >= (3, 10)
+  else lambda *, group: entry_points().get(group, ())
+)
+
+
 class Laajennos(SimpleTestCase):
 
   def testaa_rekisterointi(self):
     ''' Rekisteröidäänkö `asetukset.py` oikein laajennokseksi? '''
-    for entry_point in pkg_resources.iter_entry_points('django.asetukset'):
-      if entry_point.module_name == 'pistoke.asetukset':
+    for entry_point in _entry_points(group='django.asetukset'):
+      if entry_point.value == 'pistoke.asetukset':
         break
     else:
       raise AssertionError('Pistoke-asetuslaajennosta ei rekisteröity!')
