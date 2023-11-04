@@ -177,6 +177,15 @@ class WebsocketProtokollaTesti(SimpleTestCase):
 
   async_client_class = WebsocketPaate
 
+  async def testaa_olematon_403(self):
+    ''' Palauttaako WS-pyyntö tuntemattomaan osoitteeseen 403-sanoman? '''
+    with self.assertRaises(self.async_client.websocket.Http403):
+      async with self.async_client.websocket('/ei-ole/') as websocket:
+        pass
+        # async with self.async_client.websocket as websocket
+      # with self.assertRaises
+    # async def testaa_403
+
   async def testaa_puuttuva(self):
     ''' Toimiiko puuttuva WS-protokolla oikein: poikkeus? '''
     with self.assertRaises(self.async_client.websocket.KattelyEpaonnistui):
@@ -224,10 +233,10 @@ class WebsocketProtokollaTesti(SimpleTestCase):
     ''' Pääsynhallinta WS-protokollan sisäpuolella -> WS 1001? '''
     with self.assertRaises(PermissionDenied):
       async with self.async_client.websocket('/paasy_sisapuolella_f/') as websocket:
-        pass
+        await websocket.receive()
     with self.assertRaises(PermissionDenied):
       async with self.async_client.websocket('/paasy_sisapuolella_lk/') as websocket:
-        pass
+        await websocket.receive()
     # async def testaa_paasynhallinta_sisapuolella
 
   async def testaa_puuttuva_aliprotokolla(self):
