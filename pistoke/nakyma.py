@@ -47,7 +47,7 @@ class WebsocketNakyma(generic.View):
   def __new__(cls, *args, **kwargs):
     if cls == __class__:
       raise NotImplementedError
-    return super().__new__(cls, *args, **kwargs)
+    return super().__new__(cls)
     # def __new__
 
   async def websocket(self, request, *args, **kwargs):
