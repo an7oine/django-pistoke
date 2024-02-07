@@ -102,14 +102,14 @@ class WebsocketPyynto(ASGIRequest):
       # def tarkista_csrf
     # if django_version >= 4.1
   else:
-    if django_version >= (4, 0):
-      from django.middleware.csrf import _does_token_match
-    else:
-      from django.middleware.csrf import (
-        _compare_masked_tokens as _does_token_match
-      )
-    from django.middleware.csrf import _sanitize_token
     def tarkista_csrf(self, csrf_token):
+      if django_version >= (4, 0):
+        from django.middleware.csrf import _does_token_match
+      else:
+        from django.middleware.csrf import (
+          _compare_masked_tokens as _does_token_match
+        )
+      from django.middleware.csrf import _sanitize_token
       return csrf_token \
       and self.META.get('CSRF_COOKIE') \
       and _does_token_match(
