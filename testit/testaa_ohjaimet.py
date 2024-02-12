@@ -90,7 +90,7 @@ class TestaaWebsocketOhjaimet(SimpleTestCase):
     # def testaa_websocket_ohjaimet
 
   # Origin-tarkistus testataan vain Django 4.0+ -ympäristössä.
-  # Ohitetaan itse CSRF-tunnisteen tarkistus.
+  # Ohitetaan itse CSRF-tunnisteen tarkistus; tarkistetaan vain Origin.
   @skipUnless(VERSION >= (4, ), 'Django 4.0+')
   @patch(
     'django.middleware.csrf.CsrfViewMiddleware._check_token',

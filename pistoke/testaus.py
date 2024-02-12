@@ -1,19 +1,13 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
-import functools
-from types import SimpleNamespace
+from contextlib import asynccontextmanager
 from urllib.parse import urlparse
-
-# Python 3.7+
-try: from contextlib import asynccontextmanager
-# Python 3.6
-except ImportError: from async_generator import asynccontextmanager
 
 from asgiref.sync import async_to_sync, sync_to_async
 
 from django.core.signals import (
-    request_finished, request_started,
+  request_finished, request_started,
 )
 from django.db import close_old_connections
 from django.test.client import AsyncClient

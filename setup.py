@@ -12,8 +12,9 @@ setup(
   licence='MIT',
   packages=find_packages(exclude=['testit']),
   include_package_data=True,
-  python_requires='>=3.6',
+  python_requires='>=3.8',
   install_requires=[
+    'asgiref>=3.6.0',
     'django>=3.2',
     'python-mmaare',
   ],

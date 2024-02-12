@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 
-# Python 3.7+
-try: from contextlib import asynccontextmanager
-# Python 3.6
-except ImportError: from async_generator import asynccontextmanager
-
-from asgiref.sync import sync_to_async
+from asgiref.sync import sync_to_async, iscoroutinefunction
 
 import django
 from django.conf import settings
@@ -53,12 +49,12 @@ class WebsocketKasittelija(ASGIHandler):
     try:
       yield
     finally:
-      await sync_to_async(
+      await asyncio.shield(sync_to_async(
         signals.request_finished.send,
         thread_sensitive=True
       )(
         sender=self.__class__
-      )
+      ))
     # def _django_pyynto
 
   async def __call__(self, scope, receive, send):
@@ -68,7 +64,12 @@ class WebsocketKasittelija(ASGIHandler):
     Vrt. django.core.handlers.asgi:ASGIHandler.__call__
     '''
     assert scope['type'] == 'websocket'
-    set_script_prefix(self.get_script_prefix(scope))
+
+    if hasattr(self, 'get_script_prefix'):  # Django 4.2-
+      set_script_prefix(self.get_script_prefix(scope))
+    else:  # Django 5.0+
+      from django.core.handlers.asgi import get_script_prefix
+      set_script_prefix(get_script_prefix(scope))
 
     # Tehdään Django-rutiinitoimet per saapuva pyyntö.
     async with self._django_pyynto(scope):
@@ -139,10 +140,8 @@ class WebsocketKasittelija(ASGIHandler):
 
     # Mikäli `callback` on asynkroninen funktio (tai kääre),
     # palautetaan sen tuottama alirutiini.
-    if asyncio.iscoroutinefunction(callback) \
-    or asyncio.iscoroutinefunction(
-      getattr(callback, '__call__', callback)
-    ):
+    if iscoroutinefunction(callback) \
+    or iscoroutinefunction(getattr(callback, '__call__', callback)):
       return callback(
         request, *callback_args, **callback_kwargs
       )

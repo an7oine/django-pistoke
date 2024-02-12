@@ -25,9 +25,10 @@ Lisäksi seuraavien välikkeiden toimintaa on mukautettu:
   `origin_poikkeus` (ks. `pistoke.tyokalut.origin_poikkeus`).
 '''
 
-import asyncio
 import logging
 from urllib.parse import urlparse
+
+from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 
 from django.conf import settings
 from django.contrib.sessions.middleware import SessionMiddleware
@@ -45,8 +46,33 @@ import mmaare
 logger = logging.getLogger('django.pistoke.origin')
 
 
+class OhitaPaluusanoma:
+  ''' Ohjain, joka ohittaa paluusanoman käsittelyn. '''
+
+  def process_response(self, request, response):
+    # pylint: disable=unused-argument
+    return response
+
+  # class OhitaPaluusanoma
+
+
+class Ohjain:
+  '''
+  Ohjain, joka näyttää asynkroniselta ulospäin silloin, kun signaalitien
+  seuraava ohjain on asynkroninen.
+  '''
+
+  def __init__(self, get_response):
+    self.get_response = get_response
+    if iscoroutinefunction(self.get_response):
+      markcoroutinefunction(self)
+    # def __init__
+
+  # class Ohjain
+
+
 @sync_and_async_middleware
-class WebsocketOhjain:
+class WebsocketOhjain(Ohjain):
   '''
   Ohjain, joka asettaa pyynnölle URI-määritteen `websocket` siten,
   että siihen tehdyt pyynnöt ohjataan ajossa olevaan ASGI-käsittelijään.
@@ -57,12 +83,6 @@ class WebsocketOhjain:
   Mikäli pyyntö ei ole ASGI-pohjainen, ei `websocket`-yhteys ole
   käytettävissä eikä em. määritettä aseteta.
   '''
-  def __init__(self, get_response):
-    self.get_response = get_response
-    # Asetetaan tämä ohjain näyttämään ulospäin asynkroniselta silloin,
-    # kun signaalitien seuraava ohjain on sellainen.
-    if asyncio.iscoroutinefunction(self.get_response):
-      self._is_coroutine = asyncio.coroutines._is_coroutine
 
   def __call__(self, request):
     # Huomaa, että funktiokutsu palauttaa joko synkronisen tuloksen
@@ -79,17 +99,12 @@ class WebsocketOhjain:
 
 
 @sync_and_async_middleware
-class OriginVaatimus:
+class OriginVaatimus(Ohjain):
   '''
   Ohjain, joka tarkistaa mahdollisen Websocket-pyynnöllä annetun
   Origin-otsakkeen vastaavasti kuin Django-CSRF-ohjain tarkistaa
   sen POST-pyynnöllä.
   '''
-  def __init__(self, get_response):
-    self.get_response = get_response
-    if asyncio.iscoroutinefunction(self.get_response):
-      self._is_coroutine = asyncio.coroutines._is_coroutine
-    # def __init__
 
   def __call__(self, request):
     return self.get_response(request)
@@ -120,15 +135,6 @@ class OriginVaatimus:
     # def process_view
 
   # class OriginVaatimus
-
-
-class OhitaPaluusanoma:
-  ''' Saateluokka, joka ohittaa paluusanoman käsittelyn. '''
-
-  def process_response(self, request, response):
-    return response
-
-  # class OhitaPaluusanoma
 
 
 class CsrfOhjain(OhitaPaluusanoma, CsrfViewMiddleware):

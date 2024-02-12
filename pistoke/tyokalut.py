@@ -110,7 +110,10 @@ class CsrfKattely(Koriste):
       return await request.send({
         self.virhe_avain: virhe
       } if self.virhe_avain is not None else virhe)
-    if not request.tarkista_csrf(
+    if getattr(request, '_dont_enforce_csrf_checks', False):
+      # Ohitetaan CSRF-tarkistus testauksen yhteydessä.
+      pass
+    elif not request.tarkista_csrf(
       kattely.get(self.csrf_avain)
       if self.csrf_avain else kattely
     ):
