@@ -123,4 +123,9 @@ class WebsocketPyynto(ASGIRequest):
   annettua tunnistetta vasten.
   '''
 
+  async def __aiter__(self):
+    while True:
+      yield await self.receive()
+    # async def __aiter__
+
   # class WebsocketPyynto

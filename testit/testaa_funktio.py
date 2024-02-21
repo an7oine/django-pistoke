@@ -61,6 +61,14 @@ async def kaiku_f(request):
 
 @_testinakyma
 @WebsocketProtokolla
+async def kaiku_iter(request):
+  async for sanoma in request:
+    await request.send(sanoma)
+  # async def kaiku_iter
+
+
+@_testinakyma
+@WebsocketProtokolla
 async def tyhja(request):
   pass
   # async def tyhja
@@ -127,6 +135,24 @@ class FunktiopohjainenNakyma(SimpleTestCase):
       self.assertEqual(await websocket.receive(), 'data')
       # async with self.async_client.websocket as websocket
     # async def testaa_kaiku
+
+  async def testaa_iterointi_1(self):
+    ''' Toimiiko iteraattorimuotoinen WS-näkymä virheittä? '''
+    async with self.async_client.websocket('/kaiku_iter/') as websocket:
+      await websocket.send('data')
+      self.assertEqual(await websocket.receive(), 'data')
+      # async with self.async_client.websocket as websocket
+    # async def testaa_iterointi_1
+
+  async def testaa_iterointi_2(self):
+    ''' Toimiiko iteraattorimuotoinen WS-näkymä virheittä? '''
+    async with self.async_client.websocket('/kaiku_iter/') as websocket:
+      await websocket.send('data')
+      async for sanoma in websocket:
+        self.assertEqual(sanoma, 'data')
+        break
+      # async with self.async_client.websocket as websocket
+    # async def testaa_iterointi_2
 
   async def testaa_tyhja_a(self):
     ''' Onnistuuko tiedonsiirto tyhjään WS-näkymään? '''
