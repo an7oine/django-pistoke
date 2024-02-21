@@ -207,7 +207,7 @@ class WebsocketProtokollaTesti(SimpleTestCase):
     async with self.async_client.websocket('/kasikaytto_lk/') as websocket:
       await websocket.send('data')
       self.assertEqual(await websocket.receive(), 'data')
-    # async def testaa_protokolla
+    # async def testaa_kasikaytto
 
   async def testaa_protokolla(self):
     ''' Toimiiko WS-perusprotokolla? '''

@@ -135,20 +135,15 @@ class FunktiopohjainenNakyma(SimpleTestCase):
     # async def testaa_tyhja_a
 
   async def testaa_tyhja_b(self):
-    ''' Nostaako vastaanotto päättyneestä WS-näkymästä poikkeuksen? '''
-    with self.assertRaises(asyncio.CancelledError):
-      async with self.async_client.websocket('/tyhja/') as websocket:
-        await asyncio.sleep(0.01)
-        await websocket.receive()
-      # async with self.async_client.websocket as websocket
+    ''' Päättykö yhteys automaattisesti näkymän päättyessä? '''
+    async with self.async_client.websocket('/tyhja/') as websocket:
+      await websocket.receive()
     # async def testaa_tyhja_b
 
   async def testaa_tyhja_c(self):
-    ''' Nostaako lähetys päättyneeseen WS-näkymään poikkeuksen? '''
-    with self.assertRaises(asyncio.CancelledError):
-      async with self.async_client.websocket('/tyhja/') as websocket:
-        await asyncio.sleep(0.01)
-        await websocket.send('abc')
+    ''' Päättykö yhteys automaattisesti näkymän päättyessä? '''
+    async with self.async_client.websocket('/tyhja/') as websocket:
+      await websocket.send('abc')
     # async def testaa_tyhja_c
 
   async def testaa_protokolla_a(self):
