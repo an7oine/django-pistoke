@@ -1,5 +1,8 @@
 # django-pistoke
 
+[![Tox](https://github.com/an7oine/django-pistoke/actions/workflows/ci.yaml/badge.svg?branch=gh-actions)](https://github.com/an7oine/django-pistoke/actions/workflows/ci.yaml)
+![Codecov](https://img.shields.io/codecov/c/gh/an7oine/django-pistoke)
+
 Django-laajennos, joka mahdollistaa Websocket-pyyntöjen käsittelemisen Django-näkymien kautta tasavertaisesti HTTP-pyyntöjen rinnalla.
 
 Sisältää seuraavat työkalut:

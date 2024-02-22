@@ -1,0 +1,39 @@
+name: Tox
+
+on: [pull_request, push, workflow_dispatch]
+
+jobs:
+  testit:
+    name: Yksikkötestit
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.8', '3.9', '3.10', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python }}
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install tox tox-gh-actions
+      - run: tox
+
+  kattavuus:
+    name: Testien kattavuus
+    needs: testit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install tox tox-gh-actions
+      - run: tox -e cov
+      - uses: codecov/codecov-action@v4.0.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: an7oine/django-pistoke

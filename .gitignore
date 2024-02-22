@@ -24,5 +24,6 @@ var/
 .installed.cfg
 *.egg
 
+coverage.xml
 .coverage
 .tox
