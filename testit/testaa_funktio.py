@@ -15,7 +15,7 @@ from pistoke.protokolla import (
   WebsocketAliprotokolla,
 )
 from pistoke.tyokalut import OriginPoikkeus
-from pistoke.testaus import WebsocketPaate
+from pistoke.testaus import WebsocketTesti
 
 
 ###############
@@ -42,21 +42,32 @@ async def protokolla_kasin(request):
     'type': 'websocket.send',
     'text': sanoma.get('text')
   })
-  assert await request.receive() == {'type': 'websocket.disconnect'}
   await request.send({
     'type': 'websocket.close',
   })
+  assert await request.receive() == {'type': 'websocket.disconnect'}
   # async def protokolla_kasin
 
 
 @_testinakyma
 @OriginPoikkeus
 @WebsocketProtokolla
-async def kaiku_f(request):
+async def kaiku_1(request):
   assert request.method == 'Websocket'
   sanoma = await request.receive()
   await request.send(sanoma)
-  # async def kaiku_f
+  # async def kaiku_1
+
+
+@_testinakyma
+@OriginPoikkeus
+@WebsocketProtokolla
+async def kaiku_2(request):
+  assert request.method == 'Websocket'
+  sanoma = await request.receive()
+  await request.send(sanoma)
+  await asyncio.sleep(0.01)
+  # async def kaiku_2
 
 
 @_testinakyma
@@ -105,10 +116,8 @@ async def protokolla_f(request):
 @override_settings(
   ROOT_URLCONF=__name__,
 )
-class FunktiopohjainenNakyma(SimpleTestCase):
+class FunktiopohjainenNakyma(WebsocketTesti):
   # pylint: disable=unused-variable
-
-  async_client_class = WebsocketPaate
 
   async def testaa_protokolla_kasin(self):
     '''
@@ -128,13 +137,21 @@ class FunktiopohjainenNakyma(SimpleTestCase):
       # with self.assertRaises
     # async def testaa_luottamuksellinen
 
-  async def testaa_kaiku(self):
+  async def testaa_kaiku_1(self):
     ''' Toimiiko funktiopohjainen WS-näkymä virheittä? '''
-    async with self.async_client.websocket('/kaiku_f/') as websocket:
+    async with self.async_client.websocket('/kaiku_1/') as websocket:
       await websocket.send('data')
       self.assertEqual(await websocket.receive(), 'data')
       # async with self.async_client.websocket as websocket
-    # async def testaa_kaiku
+    # async def testaa_kaiku_1
+
+  async def testaa_kaiku_2(self):
+    ''' Toimiiko funktiopohjainen WS-näkymä virheittä? '''
+    async with self.async_client.websocket('/kaiku_2/') as websocket:
+      await websocket.send('data')
+      self.assertEqual(await websocket.receive(), 'data')
+      # async with self.async_client.websocket as websocket
+    # async def testaa_kaiku_2
 
   async def testaa_iterointi_1(self):
     ''' Toimiiko iteraattorimuotoinen WS-näkymä virheittä? '''
@@ -168,8 +185,9 @@ class FunktiopohjainenNakyma(SimpleTestCase):
 
   async def testaa_tyhja_c(self):
     ''' Päättykö yhteys automaattisesti näkymän päättyessä? '''
-    async with self.async_client.websocket('/tyhja/') as websocket:
-      await websocket.send('abc')
+    with self.assertRaises(self.async_client.SyotettaEiLuettu):
+      async with self.async_client.websocket('/tyhja/') as websocket:
+        await websocket.send('abc')
     # async def testaa_tyhja_c
 
   async def testaa_protokolla_a(self):
