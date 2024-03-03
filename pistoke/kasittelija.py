@@ -13,6 +13,7 @@ from django.core import signals
 from django.test.utils import override_settings
 from django.urls import set_script_prefix, set_urlconf
 
+from pistoke.protokolla import _WebsocketProtokolla
 from pistoke.pyynto import WebsocketPyynto
 
 
@@ -27,6 +28,9 @@ class WebsocketKasittelija(ASGIHandler):
   '''
   Saapuvien Websocket-pyyntöjen (istuntojen) käsittelyrutiini.
   '''
+
+  nosta_syotetta_ei_luettu: bool = False
+
   def __new__(cls, *args, **kwargs):
     '''
     Alusta Django ennen käsittelyrutiinin luontia.
@@ -49,12 +53,15 @@ class WebsocketKasittelija(ASGIHandler):
     try:
       yield
     finally:
-      await asyncio.shield(sync_to_async(
-        signals.request_finished.send,
-        thread_sensitive=True
-      )(
-        sender=self.__class__
-      ))
+      try:
+        await asyncio.shield(sync_to_async(
+          signals.request_finished.send,
+          thread_sensitive=True
+        )(
+          sender=self.__class__
+        ))
+      except asyncio.CancelledError:
+        pass
     # def _django_pyynto
 
   async def __call__(self, scope, receive, send):
@@ -158,7 +165,13 @@ class WebsocketKasittelija(ASGIHandler):
       # Mikäli tuloksena palautuu `async def websocket(...)`-metodin
       # (tai vastaavan) tuottama alirutiini, palautetaan se.
       if asyncio.iscoroutine(nakyma):
-        return nakyma
+        async def _nakyma():
+          try:
+            return await nakyma
+          except _WebsocketProtokolla.SyotettaEiLuettu:
+            if self.nosta_syotetta_ei_luettu:
+              raise
+        return _nakyma()
       # Muussa tapauksessa kyse voi olla esim. uudelleenohjauksesta
       # kirjautumissivulle.
       # Evätään tällöin Websocket-pyyntö.

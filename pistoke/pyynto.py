@@ -78,7 +78,12 @@ class WebsocketPyynto(ASGIRequest):
   # pylint: disable=no-name-in-module, undefined-variable
   if django_version >= (4, 1):
     def tarkista_csrf(self, csrf_token):
-      ''' Vrt. django.middleware.csrf:CsrfMiddleware._check_token. '''
+      '''
+      Vrt. django.middleware.csrf:CsrfMiddleware._check_token.
+
+      Huomaa, että tässä käytetään `self.META["CSRF_COOKIE"]`-avainta,
+      jonka `CsrfMiddleware.process_request` asettaa.
+      '''
       # pylint: disable=no-member
       from django.middleware.csrf import (
         _check_token_format,
@@ -87,11 +92,7 @@ class WebsocketPyynto(ASGIRequest):
       )
       if csrf_token is None:
         return False
-      if settings.CSRF_USE_SESSIONS:
-        csrf_secret = self.session.get(CSRF_SESSION_KEY)
-      else:
-        csrf_secret = self.COOKIES[settings.CSRF_COOKIE_NAME]
-      if csrf_secret is None:
+      if (csrf_secret := self.META.get('CSRF_COOKIE')) is None:
         return False
       try:
         _check_token_format(csrf_token)

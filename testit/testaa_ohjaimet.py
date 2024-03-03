@@ -141,7 +141,7 @@ class TestaaWebsocketOhjaimet(SimpleTestCase):
       await ws.send('sanoma')
 
     # Ei-sallittu Origin: tarkistus hylkää pyynnön.
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       async with self.async_client.websocket(
         '/websocket_nakyma/',
         {},

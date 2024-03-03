@@ -179,7 +179,7 @@ class WebsocketProtokollaTesti(SimpleTestCase):
 
   async def testaa_olematon_403(self):
     ''' Palauttaako WS-pyyntö tuntemattomaan osoitteeseen 403-sanoman? '''
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       async with self.async_client.websocket('/ei-ole/') as websocket:
         pass
         # async with self.async_client.websocket as websocket
@@ -188,11 +188,11 @@ class WebsocketProtokollaTesti(SimpleTestCase):
 
   async def testaa_puuttuva(self):
     ''' Toimiiko puuttuva WS-protokolla oikein: poikkeus? '''
-    with self.assertRaises(self.async_client.websocket.KattelyEpaonnistui):
+    with self.assertRaises(self.async_client.KattelyEpaonnistui):
       async with self.async_client.websocket('/puuttuva_f/') as websocket:
         await websocket.send('data')
         self.assertEqual(await websocket.receive(), 'data')
-    with self.assertRaises(self.async_client.websocket.KattelyEpaonnistui):
+    with self.assertRaises(self.async_client.KattelyEpaonnistui):
       async with self.async_client.websocket('/puuttuva_lk/') as websocket:
         await websocket.send('data')
         self.assertEqual(await websocket.receive(), 'data')
@@ -221,10 +221,10 @@ class WebsocketProtokollaTesti(SimpleTestCase):
 
   async def testaa_paasynhallinta_ulkopuolella(self):
     ''' Pääsynhallinta WS-protokollan ulkopuolella -> HTTP 403? '''
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       async with self.async_client.websocket('/paasy_ulkopuolella_f/') as websocket:
         pass
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       async with self.async_client.websocket('/paasy_ulkopuolella_lk/') as websocket:
         pass
     # async def testaa_paasynhallinta_ulkopuolella
@@ -242,24 +242,24 @@ class WebsocketProtokollaTesti(SimpleTestCase):
   async def testaa_puuttuva_aliprotokolla(self):
     ''' Hylätäänkö yhteyspyyntö, ellei aliprotokollaa ole määritetty? '''
     # Pyydetty protokolla puuttuu -> 403.
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       async with self.async_client.websocket('/aliprotokolla_f/'):
         pass
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       async with self.async_client.websocket('/aliprotokolla_lk/'):
         pass
     # async def testaa_puuttuva_aliprotokolla
 
   async def testaa_epayhteensopiva_aliprotokolla(self):
     ''' Hylätäänkö yhteyspyyntö ilman yhteensopivaa aliprotokollaa? '''
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       # Ei yhteensopivaa protokollaa -> 403.
       async with self.async_client.websocket(
         '/aliprotokolla_f/',
         protokolla=['yhtasuuri', 'kahta-pienempi'],
       ):
         pass
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       # Ei yhteensopivaa protokollaa -> 403.
       async with self.async_client.websocket(
         '/aliprotokolla_lk/',
