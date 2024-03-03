@@ -139,6 +139,7 @@ class TestaaWebsocketOhjaimet(SimpleTestCase):
       {}
     ) as ws:
       await ws.send('sanoma')
+      self.assertEqual(await ws.receive(), 'sanoma')
 
     # Ei-sallittu Origin: tarkistus hylkää pyynnön.
     with self.assertRaises(self.async_client.Http403):
@@ -156,6 +157,7 @@ class TestaaWebsocketOhjaimet(SimpleTestCase):
       Origin='htts://sallittu-lahde',
     ) as ws:
       await ws.send('sanoma')
+      self.assertEqual(await ws.receive(), 'sanoma')
 
     # Poikkeus: ohitetaan tarkistus.
     async with self.async_client.websocket(
@@ -164,6 +166,7 @@ class TestaaWebsocketOhjaimet(SimpleTestCase):
       Origin='htts://ei-sallittu-lahde',
     ) as ws:
       await ws.send('sanoma')
+      self.assertEqual(await ws.receive(), 'sanoma')
     # async def testaa_websocket_pyynto
 
   # class TestaaWebsocketOhjaimet

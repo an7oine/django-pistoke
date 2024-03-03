@@ -13,7 +13,7 @@ from pistoke.protokolla import (
   WebsocketProtokolla,
   WebsocketAliprotokolla,
 )
-from pistoke.testaus import WebsocketPaate
+from pistoke.testaus import WebsocketPaate, WebsocketTesti
 
 
 urlpatterns = []
@@ -53,6 +53,7 @@ async def kasikaytto_f(request):
     'type': 'websocket.send'
   })
   await request.send({'type': 'websocket.close'})
+  assert await request.receive() == {'type': 'websocket.disconnect'}
 
 @_nakyma
 class Kasikaytto_LK(WebsocketNakyma):
@@ -65,6 +66,7 @@ class Kasikaytto_LK(WebsocketNakyma):
       'type': 'websocket.send'
     })
     await request.send({'type': 'websocket.close'})
+    assert await request.receive() == {'type': 'websocket.disconnect'}
 
 
 # Perusprotokolla.
@@ -81,6 +83,14 @@ async def protokolla_f(request):
 class Protokolla_LK(WebsocketNakyma):
   async def websocket(self, request):
     await request.send(await request.receive())
+
+
+# Protokolla HTTP-näkymän yhteydessä.
+@_nakyma
+@WebsocketProtokolla
+async def http(request):
+  from django.http import HttpResponse
+  return HttpResponse(request.method)
 
 
 # Pääsynhallinta protokollan ulkopuolella.
@@ -169,13 +179,20 @@ class Aliprotokolla_LK(WebsocketNakyma):
     await request.send(f'{int(await request.receive()) + d}')
 
 
+@_nakyma
+@WebsocketAliprotokolla()
+async def tyhja_aliprotokolla(request):
+  assert request.protokolla is None
+  await request.send(f'{int(await request.receive())}')
+
+
 @override_settings(
   ROOT_URLCONF=__name__,
 )
-class WebsocketProtokollaTesti(SimpleTestCase):
+class WebsocketProtokollaTesti(WebsocketTesti, SimpleTestCase):
   # pylint: disable=unused-variable
 
-  async_client_class = WebsocketPaate
+  websocket_aikakatkaisu = None
 
   async def testaa_olematon_403(self):
     ''' Palauttaako WS-pyyntö tuntemattomaan osoitteeseen 403-sanoman? '''
@@ -218,6 +235,12 @@ class WebsocketProtokollaTesti(SimpleTestCase):
       await websocket.send('data')
       self.assertEqual(await websocket.receive(), 'data')
     # async def testaa_protokolla
+
+  async def testaa_http(self):
+    ''' Toimiiko HTTP-näkymä, vaikka siihen on sovellettu WS-protokollaa? '''
+    sanoma = await self.async_client.get('/http/')
+    self.assertEqual(sanoma.content, b'GET')
+    # async def testaa_http
 
   async def testaa_paasynhallinta_ulkopuolella(self):
     ''' Pääsynhallinta WS-protokollan ulkopuolella -> HTTP 403? '''
@@ -285,5 +308,22 @@ class WebsocketProtokollaTesti(SimpleTestCase):
       await websocket.send('42')
       self.assertEqual(await websocket.receive(), '41')
     # async def testaa_yhteensopiva_aliprotokolla
+
+  async def testaa_tyhja_aliprotokolla(self):
+    ''' Toimiiko tyhjä aliprotokolla oikein: ei valittua protokollaa? '''
+    with self.assertRaises(self.async_client.Http403):
+      async with self.async_client.websocket(
+        '/tyhja_aliprotokolla/',
+        protokolla=['viisinkertainen'],
+      ) as websocket:
+        await websocket.send('42')
+        self.assertEqual(await websocket.receive(), '42')
+    async with self.async_client.websocket(
+      '/tyhja_aliprotokolla/',
+      protokolla=[],
+    ) as websocket:
+      await websocket.send('42')
+      self.assertEqual(await websocket.receive(), '42')
+    # async def testaa_tyhja_aliprotokolla
 
   # class WebsocketProtokollaTesti
