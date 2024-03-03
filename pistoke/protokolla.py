@@ -3,9 +3,8 @@
 import asyncio
 from contextlib import asynccontextmanager
 import functools
-import warnings
 
-from websockets.exceptions import ConnectionClosedOK
+from asgiref.sync import markcoroutinefunction
 
 from .tyokalut import Koriste
 
@@ -35,7 +34,10 @@ class _WebsocketKoriste(Koriste):
         None
       )
       # while _websocket is not None
-    return super().__new__(cls, websocket, **kwargs)
+    # Merkitään tulosfunktio asynkroniseksi.
+    return markcoroutinefunction(
+      super().__new__(cls, websocket, **kwargs)
+    )
     # def __new__
 
   # class _WebsocketKoriste
@@ -60,8 +62,20 @@ class _WebsocketYhteys:
     # async def _avaa_yhteys
 
   async def _sulje_yhteys(self, request):
-    request._katkaistu_tasta_paasta.set()
-    await request.send(self.lahteva_katkaisu)
+    if not request._katkaistu_vastapaasta.is_set():
+      request._katkaistu_tasta_paasta.set()
+      await request.send(self.lahteva_katkaisu)
+      try:
+        saapuva_katkaisu = await asyncio.wait_for(
+          request.receive(),
+          timeout=0.01
+        )
+        if saapuva_katkaisu != self.saapuva_katkaisu:
+          raise Kattelyvirhe(
+            'Sulkeva kättely epäonnistui: %r' % saapuva_katkaisu
+          )
+      except (asyncio.CancelledError, asyncio.TimeoutError):
+        pass
     # async def _sulje_yhteys
 
   @asynccontextmanager
@@ -83,15 +97,13 @@ class _WebsocketYhteys:
       asyncio.tasks.current_task().cancel()
 
     try:
-      yield
+      yield request
 
     finally:
-      if not request._katkaistu_vastapaasta.is_set():
-        try:
-          await asyncio.shield(self._sulje_yhteys(request))
-        except asyncio.CancelledError:
-          pass
-
+      try:
+        await asyncio.shield(self._sulje_yhteys(request))
+      except asyncio.CancelledError:
+        pass
     # async def __call__
 
   # class _WebsocketYhteys
@@ -101,6 +113,9 @@ class _WebsocketProtokolla(_WebsocketYhteys):
 
   saapuva_sanoma = {'type': 'websocket.receive'}
   lahteva_sanoma = {'type': 'websocket.send'}
+
+  class SyotettaEiLuettu(Exception):
+    ''' Näkymä ei lukenut kaikkea sille annettua syötettä. '''
 
   @asynccontextmanager
   async def __call__(
@@ -122,7 +137,7 @@ class _WebsocketProtokolla(_WebsocketYhteys):
             )
           elif sanoma['type'] == self.saapuva_katkaisu['type']:
             request._katkaistu_vastapaasta.set()
-            raise asyncio.CancelledError
+            break
           else:
             raise TypeError(repr(sanoma))
         # async def _receive
@@ -147,10 +162,7 @@ class _WebsocketProtokolla(_WebsocketYhteys):
           data = {**self.lahteva_sanoma, 'bytes': data}
         else:
           raise TypeError(repr(data))
-        try:
-          return await send.__wrapped__(data)
-        except ConnectionClosedOK as exc:
-          raise YhteysKatkaistiin from exc
+        return await send.__wrapped__(data)
         # async def send
 
       request.receive = receive
@@ -162,13 +174,20 @@ class _WebsocketProtokolla(_WebsocketYhteys):
       except (YhteysKatkaistiin, asyncio.CancelledError):
         pass
 
-      except BaseException as exc:
-        print('näkymän suoritus katkesi poikkeukseen:', exc)
-        raise
-
       finally:
         request.receive = receive.__wrapped__
         request.send = send.__wrapped__
+
+        # Varmistetaan, että näkymä luki kaiken syötteen.
+        if not syote.empty() and self.SyotettaEiLuettu is not None:
+          _s = []
+          while not syote.empty():
+            _s.append(await syote.get())
+          raise self.SyotettaEiLuettu(_s)
+        # finally
+
+      # async with super
+
     # async def __call__
 
   # class _WebsocketProtokolla
@@ -178,48 +197,37 @@ class WebsocketProtokolla(_WebsocketProtokolla, _WebsocketKoriste):
   '''
   Sallitaan vain yksi protokolla per metodi.
   '''
-  def _nakyma(self, request, *args, **kwargs):
-    return self.__wrapped__(request, *args, **kwargs)
-
   async def __call__(
     self, request, *args, **kwargs
   ):
     # pylint: disable=invalid-name
     if request.method != 'Websocket':
       # pylint: disable=no-member
-      return await self._nakyma(
+      return await self.__wrapped__(
         request, *args, **kwargs
       )
 
     async with super().__call__(
       request, *args, **kwargs
     ) as (request, _receive):
-      kaaritty = self.__wrapped__(request, *args, **kwargs)
+      kaaritty = asyncio.create_task(
+        self.__wrapped__(request, *args, **kwargs)
+      )
       receive = asyncio.create_task(_receive())
 
-      valmis, kesken = set(), {
-        asyncio.create_task(kaaritty),
-        receive,
-      }
+      @receive.add_done_callback
+      def vastaanotto_valmis(__):
+        kaaritty.cancel()
+
       try:
-        # pylint: disable=unused-variable
-        valmis, kesken = await asyncio.wait(
-          kesken,
-          return_when=asyncio.FIRST_COMPLETED
-        )
+        await kaaritty
       finally:
-        for _valmis in valmis:
-          try:
-            if exc := _valmis.exception():
-              raise exc
-          except asyncio.CancelledError:
-            pass
-        for _kesken in kesken:
-          _kesken.cancel()
-          try:
-            await _kesken
-          except asyncio.CancelledError:
-            pass
+        try:
+          await asyncio.wait_for(receive, timeout=0.01)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+          pass
+        # finally
+      # async with super.__call__
 
     # async def __call__
 

@@ -12,59 +12,35 @@ from django.core.signals import (
 )
 from django.db import close_old_connections
 from django.test.client import AsyncClient
+from django.test.testcases import SimpleTestCase
+from django.utils.functional import classproperty
 
 from pistoke.kasittelija import WebsocketKasittelija
 from pistoke.protokolla import _WebsocketProtokolla
 from pistoke.pyynto import WebsocketPyynto
 
 
-class KattelyEpaonnistui(Exception):
-  ''' Websocket-kättely epäonnistui. '''
+class WebsocketPoikkeus:
 
+  class NakymaPaattyi(Exception):
+    ''' Näkymä päättyi ennen kuin pääteyhteys alkoi. '''
 
-class Http403(Exception):
-  ''' Websocket-yhteyspyyntö epäonnistui. '''
+  class KattelyEpaonnistui(Exception):
+    ''' Websocket-kättely epäonnistui. '''
 
+  class Http403(Exception):
+    ''' Websocket-yhteyspyyntö epäonnistui. '''
 
-class SyotettaEiLuettu(RuntimeError):
-  ''' Websocket-syötettä jäi lukematta näkymän päätyttyä. '''
+  class PaateyhteysAikakatkaistiin(Exception):
+    ''' Websocket-pääteyhteys aikakatkaistiin. '''
 
+  class SyotettaEiLuettu(RuntimeError):
+    ''' Websocket-syötettä jäi lukematta näkymän päätyttyä. '''
 
-class TulostettaEiLuettu(RuntimeError):
-  ''' Websocket-tulostetta jäi lukematta pääteyhteyden päätyttyä. '''
+  class TulostettaEiLuettu(RuntimeError):
+    ''' Websocket-tulostetta jäi lukematta pääteyhteyden päätyttyä. '''
 
-
-class Queue(asyncio.Queue):
-  '''
-  Laajennettu jonototeutus, joka
-  - merkitsee haetut paketit käsitellyiksi,
-  - nostaa jonoon asetetut poikkeukset haettaessa ja
-  - nostaa nostamiseen liittyvät poikkeukset
-    asetettaessa.
-  '''
-  def katkaise_get(self):
-    self._put(asyncio.CancelledError())
-
-  def katkaise_put(self):
-    self._getters.append(asyncio.CancelledError())
-
-  async def get(self):
-    viesti = await super().get()
-    self.task_done()
-    if isinstance(viesti, BaseException):
-      raise viesti
-    else:
-      return viesti
-    # async def get
-
-  async def put(self, item):
-    if self._getters \
-    and isinstance(self._getters[0], BaseException):
-      raise self._getters.popleft()
-    return await super().put(item)
-    # async def put
-
-  # class Queue
+  # class WebsocketPoikkeus
 
 
 class WebsocketPaateKasittelija(WebsocketKasittelija):
@@ -103,6 +79,7 @@ class WebsocketPaateprotokolla(_WebsocketProtokolla):
 
   Vrt. `pistoke.protokolla.WebsocketProtokolla`.
   '''
+  # Websocket-sanomatyypit ovat päinvastaiset.
   saapuva_kattely = {'type': 'websocket.accept'}
   lahteva_kattely = {'type': 'websocket.connect'}
   saapuva_katkaisu = {'type': 'websocket.close'}
@@ -110,26 +87,39 @@ class WebsocketPaateprotokolla(_WebsocketProtokolla):
   lahteva_sanoma = {'type': 'websocket.receive'}
   saapuva_sanoma = {'type': 'websocket.send'}
 
+  # Nostetaan erillinen poikkeus, kun pääteyhteys ei lue omaa syötettään,
+  # so. näkymän tuottamaa tulostetta.
+  SyotettaEiLuettu = WebsocketPoikkeus.TulostettaEiLuettu
+
   async def _avaa_yhteys(self, request):
-    await asyncio.wait_for(request.send(self.lahteva_kattely), 0.1)
-    kattely = await asyncio.wait_for(request.receive(), 0.1)
+    ''' Kättelyiden järjestys on päinvastainen. '''
+    await request.send(self.lahteva_kattely)
+    kattely = await request.receive()
     if not isinstance(kattely, dict) or 'type' not in kattely:
-      raise KattelyEpaonnistui(
+      raise WebsocketPoikkeus.KattelyEpaonnistui(
         'Virheellinen kättely: %r' % kattely
       )
     if kattely == self.saapuva_katkaisu:
       request._katkaistu_vastapaasta.set()
-      raise Http403(
+      raise WebsocketPoikkeus.Http403(
         'Palvelin sulki yhteyden.'
       )
     elif kattely['type'] == self.saapuva_kattely['type']:
       if 'subprotocol' in kattely:
         request.scope['subprotocol'] = kattely['subprotocol']
     else:
-      raise KattelyEpaonnistui(
+      raise WebsocketPoikkeus.KattelyEpaonnistui(
         'Virheellinen kättely: %r' % kattely
       )
     # async def _avaa_yhteys
+
+  async def _sulje_yhteys(self, request):
+    '''
+    Yhteys suljetaan (disconnect) riippumatta mahdollisesta
+    näkymän lähettämästä katkaisusta (close).
+    '''
+    await request.send(self.lahteva_katkaisu)
+    # async def _sulje_yhteys
 
   @asynccontextmanager
   async def __call__(self, scope, receive, send):
@@ -161,6 +151,7 @@ class WebsocketPaateyhteys(WebsocketPaateprotokolla):
   scope: dict
   enforce_csrf_checks: bool
   raise_request_exception: bool
+  aikakatkaisu: float
 
   def __post_init__(self):
     super().__init__()
@@ -170,7 +161,7 @@ class WebsocketPaateyhteys(WebsocketPaateprotokolla):
     kasittelija = WebsocketPaateKasittelija(
       enforce_csrf_checks=self.enforce_csrf_checks
     )
-    syote, tuloste = Queue(), Queue()
+    syote, tuloste = asyncio.Queue(), asyncio.Queue()
 
     nakyma = asyncio.create_task(
       kasittelija(
@@ -180,13 +171,42 @@ class WebsocketPaateyhteys(WebsocketPaateprotokolla):
       )
     )
 
+    async def aikakatkaistu_nakyma():
+      valmis, kesken = await asyncio.wait(
+        (nakyma, ),
+        timeout=self.aikakatkaisu,
+      )
+      if valmis:
+        await nakyma
+      else:  # if kesken
+        nakyma.cancel()
+        try:
+          await nakyma
+        except asyncio.CancelledError:
+          pass
+        raise WebsocketPoikkeus.PaateyhteysAikakatkaistiin
+      # async def aikakatkaistu_nakyma
+    aikakatkaistu_nakyma = asyncio.create_task(aikakatkaistu_nakyma())
+
     paate = asyncio.tasks.current_task()
     paatteen_nostama_poikkeus = None
 
-    @nakyma.add_done_callback
+    @aikakatkaistu_nakyma.add_done_callback
     def nakyma_valmis(_nakyma):
       ''' Keskeytä pääteistunto, jos näkymä päättyy. '''
       paate.cancel()
+
+    # Anna näkymälle hetki aikaa ennen pääteyhteyden avaamista.
+    # Mikäli näkymä ehti päättyä, nostetaan poikkeus.
+    try:
+      await asyncio.sleep(0.01)
+    except asyncio.CancelledError:
+      try:
+        if poikkeus := aikakatkaistu_nakyma.exception():
+          raise poikkeus from None
+      except asyncio.CancelledError:
+        pass
+      raise WebsocketPoikkeus.NakymaPaattyi from None
 
     try:
       # Toteutetaan pääteistunto käänteisen Websocket-protokollan
@@ -196,63 +216,32 @@ class WebsocketPaateyhteys(WebsocketPaateprotokolla):
         tuloste.get,
         syote.put
       ) as request:
-        if paate.cancelled():
-          raise asyncio.CancelledError
         yield request
-
-    except asyncio.CancelledError as exc:
-      # Mikäli pääteistunto keskeytettiin näkymän päättymisen
-      # seurauksena, varmistetaan, että kaikki tuloste luettiin
-      # ennen tätä keskeytystä.
-      if not tuloste.empty():
-        _t = []
-        while not tuloste.empty():
-          _t.append(await tuloste.get())
-        raise TulostettaEiLuettu(_t) from exc
 
     except Exception as exc:
       paatteen_nostama_poikkeus = exc
 
     finally:
+      # Annetaan näkymälle hetki aikaa päättyä.
       try:
-        # Anna näkymälle hetki aikaa lukea mahdollinen jäljellä
-        # oleva syöte.
         await asyncio.sleep(0.01)
       except asyncio.CancelledError:
         pass
-      else:
-        # Tarvittaessa näkymän suoritus keskeytetään.
-        nakyma.cancel()
 
+      aikakatkaistu_nakyma.cancel()
+
+      # Odotetaan, kunnes näkymän suoritus on päättynyt.
       try:
-        await nakyma
-      except asyncio.CancelledError as exc:
-        # Mikäli näkymän suoritus päättyi kesken, varmistetaan,
-        # ettei siltä jäänyt syötettä lukematta.
-        if not syote.empty():
-          _s = []
-          while not syote.empty():
-            _s.append(await syote.get())
-          raise SyotettaEiLuettu(_s) from exc
-
-      except:
-        # Nostetaan näkymän nostama poikkeus tässä vain,
-        # ellei pääteistunto nostanut omaa poikkeustaan
-        # ja vastaava päätteen asetus on päällä.
-        if paatteen_nostama_poikkeus is None \
-        and self.raise_request_exception:
-          raise
+        await aikakatkaistu_nakyma
+      except asyncio.CancelledError:
+        pass
+      except _WebsocketProtokolla.SyotettaEiLuettu as exc:
+        raise WebsocketPoikkeus.SyotettaEiLuettu from exc
 
       finally:
-        # Tyhjennä mahdollinen pääteistunnon päättymisen jälkeen
-        # muodostunut tuloste näkymältä.
-        while not tuloste.empty():
-          tuloste.get_nowait()
-
         if paatteen_nostama_poikkeus is not None:
           raise paatteen_nostama_poikkeus
 
-        # finally
       # async with super.__call__
     # async def __call__
 
@@ -314,21 +303,29 @@ def websocket_scope(
   # def websocket_scope
 
 
-class WebsocketPaate(AsyncClient):
+class WebsocketPaate(WebsocketPoikkeus, AsyncClient):
+
+  websocket_aikakatkaisu: float = 1.0
+
+  def __init__(self, *args, **kwargs):
+    try:
+      self.websocket_aikakatkaisu = kwargs.pop('websocket_aikakatkaisu')
+    except KeyError:
+      pass
+    super().__init__(*args, **kwargs)
+    # def __init__
 
   def websocket(self, *args, **kwargs):
     '''
     Käyttö asynkronisena kontekstina:
-      >>> class Testi(SimpleTestCase):
-      >>>
-      >>>   async_client_class = WebsocketPaate
-      >>>
-      >>>   async def testaa_X(self):
-      >>>     async with self.async_client.websocket(
-      >>>       '/.../'
-      >>>     ) as websocket:
-      >>>       websocket.send(...)
-      >>>       ... = await websocket.receive()
+    >>> class Testi(WebsocketTesti):
+    >>>
+    >>>   async def testaa_X(self):
+    >>>     async with self.async_client.websocket(
+    >>>       '/.../'
+    >>>     ) as websocket:
+    >>>       websocket.send(...)
+    >>>       ... = await websocket.receive()
 
     Annettu testirutiini suoritetaan ympäröivässä kontekstissa
     ja testattava näkymä tausta-ajona (asyncio.Task).
@@ -343,13 +340,23 @@ class WebsocketPaate(AsyncClient):
       ),
       enforce_csrf_checks=self.handler.enforce_csrf_checks,
       raise_request_exception=self.raise_request_exception,
+      aikakatkaisu=self.websocket_aikakatkaisu,
     )()
     # async def websocket
 
-  # Tarjoa poikkeusluokat metodin määreinä.
-  websocket.KattelyEpaonnistui = KattelyEpaonnistui
-  websocket.Http403 = Http403
-  websocket.SyotettaEiLuettu = SyotettaEiLuettu
-  websocket.TulostettaEiLuettu = TulostettaEiLuettu
-
   # class WebsocketPaate
+
+
+class WebsocketTesti(SimpleTestCase):
+
+  websocket_aikakatkaisu: float = 1.0
+
+  @classproperty
+  def async_client_class(cls):
+    # pylint: disable=no-self-argument
+    class _WebsocketPaate(WebsocketPaate, super().async_client_class):
+      websocket_aikakatkaisu = cls.websocket_aikakatkaisu
+    return _WebsocketPaate
+    # def async_client_class
+
+  # class WebsocketTesti

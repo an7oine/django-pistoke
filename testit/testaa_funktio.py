@@ -121,7 +121,7 @@ class FunktiopohjainenNakyma(SimpleTestCase):
 
   async def testaa_luottamuksellinen(self):
     ''' Palauttaako tunnistautumaton WS-pyyntö 403-sanoman? '''
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       async with self.async_client.websocket('/luottamuksellinen_f/') as websocket:
         pass
         # async with self.async_client.websocket as websocket
@@ -174,7 +174,7 @@ class FunktiopohjainenNakyma(SimpleTestCase):
 
   async def testaa_protokolla_a(self):
     ''' Pyydetty protokolla puuttuu -> 403 (funktio). '''
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       # Ei pyydettyä protokollaa -> 403.
       async with self.async_client.websocket('/protokolla_f/'):
         pass
@@ -183,7 +183,7 @@ class FunktiopohjainenNakyma(SimpleTestCase):
 
   async def testaa_protokolla_b(self):
     ''' Ei yhteensopivaa protokollaa -> 403. '''
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       # Ei yhteensopivaa protokollaa -> 403.
       async with self.async_client.websocket(
         '/protokolla_f/',
@@ -218,7 +218,7 @@ class FunktiopohjainenNakyma(SimpleTestCase):
 
   async def testaa_protokolla_e(self):
     ''' Ei pyydettyä protokollaa -> 403. '''
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       # Ei yhteensopivaa protokollaa -> 403.
       async with self.async_client.websocket(
         '/protokolla_f/',

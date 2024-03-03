@@ -49,12 +49,15 @@ class WebsocketKasittelija(ASGIHandler):
     try:
       yield
     finally:
-      await asyncio.shield(sync_to_async(
-        signals.request_finished.send,
-        thread_sensitive=True
-      )(
-        sender=self.__class__
-      ))
+      try:
+        await asyncio.shield(sync_to_async(
+          signals.request_finished.send,
+          thread_sensitive=True
+        )(
+          sender=self.__class__
+        ))
+      except asyncio.CancelledError:
+        pass
     # def _django_pyynto
 
   async def __call__(self, scope, receive, send):

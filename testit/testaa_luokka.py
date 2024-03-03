@@ -107,7 +107,7 @@ class LuokkapohjainenNakyma(SimpleTestCase):
     Nostaako WS-pyyntö virheelliseen (ei protokollaa) näkymään poikkeuksen
     ASGI-rajapinnassa?
     '''
-    with self.assertRaises(self.async_client.websocket.KattelyEpaonnistui):
+    with self.assertRaises(self.async_client.KattelyEpaonnistui):
       async with self.async_client.websocket('/virheellinen/') as websocket:
         await websocket.send('data')
       # with self.assertRaises
@@ -138,7 +138,7 @@ class LuokkapohjainenNakyma(SimpleTestCase):
 
   async def testaa_luottamuksellinen(self):
     ''' Palauttaako tunnistautumaton WS-pyyntö 403-sanoman? '''
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       async with self.async_client.websocket('/luottamuksellinen_lk/') as websocket:
         pass
         # async with self.async_client.websocket as websocket
@@ -147,7 +147,7 @@ class LuokkapohjainenNakyma(SimpleTestCase):
 
   async def testaa_protokolla(self):
     ''' Pyydetty protokolla puuttuu -> 403 (luokka). '''
-    with self.assertRaises(self.async_client.websocket.Http403):
+    with self.assertRaises(self.async_client.Http403):
       async with self.async_client.websocket('/protokolla_lk/'):
         pass
       # with self.assertRaises
