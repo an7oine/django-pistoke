@@ -46,6 +46,8 @@ class WebsocketPoikkeus:
 class WebsocketPaateKasittelija(WebsocketKasittelija):
   ''' Vrt. AsyncClientHandler '''
 
+  nosta_syotetta_ei_luettu = True
+
   def __init__(
     self,
     *args,
