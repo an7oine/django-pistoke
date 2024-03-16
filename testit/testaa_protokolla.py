@@ -7,6 +7,7 @@ from django.test import SimpleTestCase
 from django.test.utils import override_settings
 from django.urls import path
 from django.utils.decorators import method_decorator
+from django import VERSION as django_versio
 
 from pistoke.nakyma import WebsocketNakyma
 from pistoke.protokolla import (
@@ -243,8 +244,18 @@ class WebsocketProtokollaTesti(WebsocketTesti, SimpleTestCase):
     # async def testaa_http
 
   async def testaa_paasynhallinta_ulkopuolella(self):
-    ''' Pääsynhallinta WS-protokollan ulkopuolella -> HTTP 403? '''
-    with self.assertRaises(self.async_client.Http403):
+    '''
+    Pääsynhallinta WS-protokollan ulkopuolella -> HTTP 403?
+
+    Django 5.1+ nostaa `permission_required`-koristeessa PermissionDenied-
+    poikkeuksen; ks. https://code.djangoproject.com/ticket/35030.
+
+    Huomaa, että `PermissionRequiredMixin` toimii samoin kuin 5.0:ssa.
+    '''
+    with self.assertRaises(
+      PermissionDenied if django_versio >= (5, 1)
+      else self.async_client.Http403
+    ):
       async with self.async_client.websocket('/paasy_ulkopuolella_f/') as websocket:
         pass
     with self.assertRaises(self.async_client.Http403):

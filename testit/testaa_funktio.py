@@ -4,10 +4,12 @@ import asyncio
 
 from django.contrib.auth.decorators import permission_required
 from django.contrib.auth.mixins import PermissionRequiredMixin
+from django.core.exceptions import PermissionDenied
 from django.test import SimpleTestCase
 from django.test.utils import override_settings
 from django.urls import path
 from django.utils.decorators import method_decorator
+from django import VERSION as django_versio
 
 from pistoke.nakyma import WebsocketNakyma
 from pistoke.protokolla import (
@@ -129,8 +131,16 @@ class FunktiopohjainenNakyma(WebsocketTesti):
     # async def testaa_protokolla_kasin
 
   async def testaa_luottamuksellinen(self):
-    ''' Palauttaako tunnistautumaton WS-pyyntö 403-sanoman? '''
-    with self.assertRaises(self.async_client.Http403):
+    '''
+    Palauttaako tunnistautumaton WS-pyyntö 403-sanoman?
+
+    Django 5.1+ nostaa `permission_required`-koristeessa PermissionDenied-
+    poikkeuksen; ks. https://code.djangoproject.com/ticket/35030.
+    '''
+    with self.assertRaises(
+      PermissionDenied if django_versio >= (5, 1)
+      else self.async_client.Http403
+    ):
       async with self.async_client.websocket('/luottamuksellinen_f/') as websocket:
         pass
         # async with self.async_client.websocket as websocket
