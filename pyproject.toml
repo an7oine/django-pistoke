@@ -1,2 +1,31 @@
 [build-system]
-requires = ["git-versiointi>=1.6b4", "setuptools>=42", "wheel"]
+requires = ["git-versiointi>=1.6rc4", "setuptools>=69", "wheel"]
+
+[project]
+name = "django-pistoke"
+description = "Django-Websocket-laajennos"
+readme = "README.md"
+authors = [
+  {name = "Antti Hautaniemi", email = "antti.hautaniemi@me.com"},
+]
+license = {file = "Oikeudet.txt"}
+requires-python = ">= 3.8"
+dynamic = ["version"]
+dependencies = [
+  "asgiref>=3.6.0",
+  "django>=3.2",
+  "python-mmaare",
+]
+
+[project.optional-dependencies]
+runserver = ["uvicorn[standard]"]
+websocket = ["websockets>=8.0"]
+
+[project.entry-points."django.asetukset"]
+pistoke = "pistoke.asetukset"
+
+[project.urls]
+Repository = "https://github.com/an7oine/django-pistoke.git"
+
+[tool.setuptools.packages.find]
+exclude = ["testit"]
