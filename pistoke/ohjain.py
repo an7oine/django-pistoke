@@ -160,6 +160,7 @@ WEBSOCKET_MIDDLEWARE = {
   'django.middleware.gzip.GZipMiddleware': False,
   'django.middleware.clickjacking.XFrameOptionsMiddleware': False,
   'django_hosts.middleware.HostsResponseMiddleware': False,
+  'request_logging.middleware.LoggingMiddleware': False,
 
   # Korvataan muunnoksella.
   'django.middleware.csrf.CsrfViewMiddleware': 'pistoke.ohjain.CsrfOhjain',
@@ -174,12 +175,16 @@ WEBSOCKET_MIDDLEWARE = {
 def sovita_ohjain_websocket_pyynnolle(ohjain):
   if isinstance(ohjain, str):
     ohjain = import_string(ohjain)
-  assert isinstance(ohjain, type)
-  return type(
-    ohjain.__name__,
-    (OhitaPaluusanoma, ohjain),
-    {}
-  )
+  if isinstance(ohjain, type):
+    return type(
+      ohjain.__name__,
+      (OhitaPaluusanoma, ohjain),
+      {}
+    )
+  elif callable(ohjain):
+    return ohjain
+  else:
+    raise NotImplementedError
   # def sovita_ohjain_websocket_pyynnolle
 
 @mmaare
