@@ -1,5 +1,6 @@
 [build-system]
-requires = ["git-versiointi>=1.6rc4", "setuptools>=69", "wheel"]
+requires = ["git-versiointi>=1.7b1", "setuptools>=69"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-pistoke"
