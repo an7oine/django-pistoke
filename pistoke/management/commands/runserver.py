@@ -131,12 +131,20 @@ class Command(_Command):
     parser.add_argument(
       '--ssl-keyfile',
       default=getattr(self, 'oletus_ssl_keyfile', None),
-      help=f'SSL-avaintiedosto (HTTPS)',
+      help='SSL-avaintiedosto (HTTPS)',
     )
     parser.add_argument(
       '--ssl-certfile',
       default=getattr(self, 'oletus_ssl_certfile', None),
-      help=f'SSL-varmennetiedosto (HTTPS)',
+      help='SSL-varmennetiedosto (HTTPS)',
+    )
+    parser.add_argument(
+      '--workers',
+      type=int,
+      default=1,
+      help=(
+        'Uvicorn-työsäikeiden määrä. Arvo >1 vaatii valitsimen --noreload.'
+      ),
     )
     # def add_arguments
 
@@ -170,6 +178,7 @@ class Command(_Command):
         'ssl_keyfile': options['ssl_keyfile'],
         'ssl_certfile': options['ssl_certfile'],
       } if options['ssl_keyfile'] and options['ssl_certfile'] else {}),
+      workers=options['workers'],
     )
     # def run
 
